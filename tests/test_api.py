@@ -18,3 +18,41 @@ def test_openapi_schema_is_available() -> None:
 
     assert response.status_code == 200
     assert response.json()["info"]["title"] == "RLT.Startup API"
+
+def test_create_rfq_returns_created_rfq() -> None:
+    response = client.post(
+        "/rfqs",
+        json={
+            "buyer_organization_id": "11111111-1111-4111-8111-111111111111",
+            "items": [
+                {
+                    "product_name": "Стальной лист",
+                    "quantity": "100",
+                    "unit": "кг",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 201
+
+    data = response.json()
+    assert data["buyer_organization_id"] == "11111111-1111-4111-8111-111111111111"
+    assert len(data["items"]) == 1
+    assert data["items"][0]["product_name"] == "Стальной лист"
+    assert data["status"] == "draft"
+    assert data["id"]
+    assert data["created_at"]
+
+
+def test_create_rfq_rejects_invalid_data() -> None:
+    response = client.post(
+        "/rfqs",
+        json={
+            "buyer_organization_id": "not-a-uuid",
+            "items": [],
+        },
+    )
+
+    assert response.status_code == 422
+
