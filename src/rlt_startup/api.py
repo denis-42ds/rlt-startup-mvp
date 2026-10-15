@@ -1,12 +1,18 @@
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
+from pydantic import BaseModel, ConfigDict, Field
 
 from rlt_startup.models.rfq import RFQ
 from rlt_startup.repositories.rfq_repository import (
     InMemoryRFQRepository,
     RFQAlreadyExistsError,
     RFQRepository,
+)
+from rlt_startup.services.catalog_policy import CatalogPolicyAdapter
+from rlt_startup.services.seller_offer_workflow import (
+    SellerOfferWorkflowResult,
+    run_seller_offer_workflow,
 )
 
 app = FastAPI(
@@ -16,10 +22,23 @@ app = FastAPI(
 )
 
 app.state.rfq_repository = InMemoryRFQRepository()
+app.state.supplier_adapters = {}
+
+
+class SellerOfferWorkflowRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    supplier_ids: list[UUID] = Field(min_length=1)
 
 
 def get_rfq_repository(request: Request) -> RFQRepository:
     return request.app.state.rfq_repository
+
+
+def get_supplier_adapters(
+    request: Request,
+) -> dict[UUID, CatalogPolicyAdapter]:
+    return request.app.state.supplier_adapters
 
 
 @app.get("/health", tags=["system"])
@@ -63,3 +82,36 @@ def get_rfq(
 
     return rfq
 
+
+@app.post(
+    "/rfqs/{rfq_id}/seller-offer-workflow",
+    response_model=SellerOfferWorkflowResult,
+    tags=["seller-workflow"],
+)
+def execute_seller_offer_workflow(
+    rfq_id: UUID,
+    payload: SellerOfferWorkflowRequest,
+    repository: RFQRepository = Depends(get_rfq_repository),
+    adapters: dict[UUID, CatalogPolicyAdapter] = Depends(
+        get_supplier_adapters
+    ),
+) -> SellerOfferWorkflowResult:
+    rfq = repository.get(rfq_id)
+
+    if rfq is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="RFQ not found",
+        )
+
+    if len(payload.supplier_ids) != len(set(payload.supplier_ids)):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="supplier_ids must not contain duplicates",
+        )
+
+    return run_seller_offer_workflow(
+        rfq=rfq,
+        supplier_ids=payload.supplier_ids,
+        adapters=adapters,
+    )
