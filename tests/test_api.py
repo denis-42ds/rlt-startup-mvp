@@ -1,24 +1,19 @@
-from fastapi.testclient import TestClient
-from rlt_startup.api import app
 from uuid import uuid4
 
-client = TestClient(app)
-
-
-def test_health_check_returns_ok() -> None:
+def test_health_check_returns_ok(client) -> None:
     response = client.get("/health")
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
 
 
-def test_openapi_schema_is_available() -> None:
+def test_openapi_schema_is_available(client) -> None:
     response = client.get("/openapi.json")
 
     assert response.status_code == 200
     assert response.json()["info"]["title"] == "RLT.Startup API"
 
-def test_create_rfq_returns_created_rfq() -> None:
+def test_create_rfq_returns_created_rfq(client) -> None:
     response = client.post(
         "/rfqs",
         json={
@@ -44,7 +39,7 @@ def test_create_rfq_returns_created_rfq() -> None:
     assert data["created_at"]
 
 
-def test_create_rfq_rejects_invalid_data() -> None:
+def test_create_rfq_rejects_invalid_data(client) -> None:
     response = client.post(
         "/rfqs",
         json={
@@ -55,7 +50,7 @@ def test_create_rfq_rejects_invalid_data() -> None:
 
     assert response.status_code == 422
 
-def test_get_rfq_returns_previously_created_rfq() -> None:
+def test_get_rfq_returns_previously_created_rfq(client) -> None:
     create_response = client.post(
         "/rfqs",
         json={
@@ -79,7 +74,7 @@ def test_get_rfq_returns_previously_created_rfq() -> None:
     assert response.json()["items"][0]["product_name"] == "Стальной лист"
 
 
-def test_get_unknown_rfq_returns_404() -> None:
+def test_get_unknown_rfq_returns_404(client) -> None:
     response = client.get(f"/rfqs/{uuid4()}")
 
     assert response.status_code == 404
