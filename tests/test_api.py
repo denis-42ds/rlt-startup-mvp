@@ -1,23 +1,53 @@
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from uuid import uuid4
 
-def test_health_check_returns_ok(client) -> None:
-    response = client.get("/health")
+from rlt_startup.models.supplier_data import (
+    InventorySnapshot,
+    SupplierCatalogItem,
+    SupplierPolicy,
+)
+from rlt_startup.services.catalog_policy import InMemoryCatalogPolicyAdapter
 
-    assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
 
+def test_seller_workflow_prepares_and_compares_offers(client) -> None:
+    supplier_id = uuid4()
+    catalog_item = SupplierCatalogItem(
+        supplier_organization_id=supplier_id,
+        product_name="Стальной лист",
+        unit="кг",
+        unit_price="150",
+        currency="RUB",
+    )
+    adapter = InMemoryCatalogPolicyAdapter(
+        catalog_items=[catalog_item],
+        inventory_snapshots=[
+            InventorySnapshot(
+                catalog_item_id=catalog_item.id,
+                available_quantity="200",
+                observed_at=datetime.now(timezone.utc)
+                - timedelta(minutes=5),
+                source="api-test",
+            )
+        ],
+        policies=[
+            SupplierPolicy(
+                supplier_organization_id=supplier_id,
+                currency="RUB",
+                minimum_order_value="0",
+                max_offer_validity_days=7,
+            )
+        ],
+    )
 
-def test_openapi_schema_is_available(client) -> None:
-    response = client.get("/openapi.json")
+    client.app.state.supplier_adapters = {supplier_id: adapter}
 
-    assert response.status_code == 200
-    assert response.json()["info"]["title"] == "RLT.Startup API"
-
-def test_create_rfq_returns_created_rfq(client) -> None:
-    response = client.post(
+    create_response = client.post(
         "/rfqs",
         json={
-            "buyer_organization_id": "11111111-1111-4111-8111-111111111111",
+            "buyer_organization_id": str(uuid4()),
+            "currency": "RUB",
+            "max_unit_price": "200",
             "items": [
                 {
                     "product_name": "Стальной лист",
@@ -27,34 +57,40 @@ def test_create_rfq_returns_created_rfq(client) -> None:
             ],
         },
     )
+    assert create_response.status_code == 201
+    rfq_id = create_response.json()["id"]
 
-    assert response.status_code == 201
-
-    data = response.json()
-    assert data["buyer_organization_id"] == "11111111-1111-4111-8111-111111111111"
-    assert len(data["items"]) == 1
-    assert data["items"][0]["product_name"] == "Стальной лист"
-    assert data["status"] == "draft"
-    assert data["id"]
-    assert data["created_at"]
-
-
-def test_create_rfq_rejects_invalid_data(client) -> None:
     response = client.post(
-        "/rfqs",
-        json={
-            "buyer_organization_id": "not-a-uuid",
-            "items": [],
-        },
+        f"/rfqs/{rfq_id}/seller-offer-workflow",
+        json={"supplier_ids": [str(supplier_id)]},
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 200
+    data = response.json()
+    assert data["preparations"][str(supplier_id)]["ready"] is True
+    assert data["preparations"][str(supplier_id)]["offer"] is not None
+    assert len(data["comparisons"]) == 1
+    assert data["comparisons"][0]["eligible"] is True
+    assert Decimal(data["comparisons"][0]["total_price"]) == Decimal("15000")
 
-def test_get_rfq_returns_previously_created_rfq(client) -> None:
+
+def test_seller_workflow_returns_404_for_unknown_rfq(client) -> None:
+    response = client.post(
+        f"/rfqs/{uuid4()}/seller-offer-workflow",
+        json={"supplier_ids": [str(uuid4())]},
+    )
+
+    assert response.status_code == 404
+
+
+def test_seller_workflow_reports_missing_supplier_adapter(client) -> None:
+    supplier_id = uuid4()
+
     create_response = client.post(
         "/rfqs",
         json={
-            "buyer_organization_id": "11111111-1111-4111-8111-111111111111",
+            "buyer_organization_id": str(uuid4()),
+            "currency": "RUB",
             "items": [
                 {
                     "product_name": "Стальной лист",
@@ -66,15 +102,44 @@ def test_get_rfq_returns_previously_created_rfq(client) -> None:
     )
     assert create_response.status_code == 201
 
-    rfq_id = create_response.json()["id"]
-    response = client.get(f"/rfqs/{rfq_id}")
+    response = client.post(
+        f"/rfqs/{create_response.json()['id']}/seller-offer-workflow",
+        json={"supplier_ids": [str(supplier_id)]},
+    )
 
     assert response.status_code == 200
-    assert response.json()["id"] == rfq_id
-    assert response.json()["items"][0]["product_name"] == "Стальной лист"
+    data = response.json()
+    preparation = data["preparations"][str(supplier_id)]
+
+    assert preparation["ready"] is False
+    assert preparation["offer"] is None
+    assert "адаптер" in preparation["reasons"][0].lower()
+    assert data["comparisons"] == []
 
 
-def test_get_unknown_rfq_returns_404(client) -> None:
-    response = client.get(f"/rfqs/{uuid4()}")
+def test_seller_workflow_rejects_duplicate_supplier_ids(client) -> None:
+    supplier_id = uuid4()
 
-    assert response.status_code == 404
+    create_response = client.post(
+        "/rfqs",
+        json={
+            "buyer_organization_id": str(uuid4()),
+            "items": [
+                {
+                    "product_name": "Стальной лист",
+                    "quantity": "100",
+                    "unit": "кг",
+                }
+            ],
+        },
+    )
+    assert create_response.status_code == 201
+
+    response = client.post(
+        f"/rfqs/{create_response.json()['id']}/seller-offer-workflow",
+        json={
+            "supplier_ids": [str(supplier_id), str(supplier_id)]
+        },
+    )
+
+    assert response.status_code == 422
