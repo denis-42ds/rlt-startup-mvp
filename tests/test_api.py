@@ -405,6 +405,89 @@ def test_supplier_can_confirm_after_buyer(client) -> None:
     assert stored_order.status.value == "order_confirmed"
 
 
+
+def test_supplier_confirmation_rejected_when_stock_becomes_insufficient(client):
+    rfq_id, offer_data = _create_rfq_and_offer(client)
+
+    create_response = client.post(
+        f"/rfqs/{rfq_id}/orders",
+        json={"offer_id": offer_data["id"]},
+    )
+    assert create_response.status_code == 201
+    order_data = create_response.json()
+    order_id = order_data["id"]
+
+    buyer_response = client.post(
+        f"/orders/{order_id}/buyer-confirmation",
+    )
+    assert buyer_response.status_code == 200
+
+    supplier_id = UUID(offer_data["supplier_organization_id"])
+    adapter = client.app.state.supplier_adapters[supplier_id]
+    catalog_item_id = UUID(order_data["items"][0]["catalog_item_id"])
+
+    old_snapshot = adapter.get_inventory(catalog_item_id)
+    assert old_snapshot is not None
+
+    adapter._inventory[catalog_item_id] = old_snapshot.model_copy(
+        update={"available_quantity": Decimal("1")}
+    )
+
+    response = client.post(
+        f"/orders/{order_id}/supplier-confirmation",
+    )
+
+    assert response.status_code == 422
+    assert "Недостаточно товара на складе" in response.json()["detail"]
+
+    stored_order = client.app.state.order_repository.get(UUID(order_id))
+    assert stored_order is not None
+    assert stored_order.status.value == "pending_supplier_confirmation"
+    assert stored_order.supplier_confirmed_at is None
+
+
+def test_supplier_confirmation_rejected_when_inventory_is_stale(client):
+    rfq_id, offer_data = _create_rfq_and_offer(client)
+
+    create_response = client.post(
+        f"/rfqs/{rfq_id}/orders",
+        json={"offer_id": offer_data["id"]},
+    )
+    assert create_response.status_code == 201
+    order_data = create_response.json()
+    order_id = order_data["id"]
+
+    buyer_response = client.post(
+        f"/orders/{order_id}/buyer-confirmation",
+    )
+    assert buyer_response.status_code == 200
+
+    supplier_id = UUID(offer_data["supplier_organization_id"])
+    adapter = client.app.state.supplier_adapters[supplier_id]
+    catalog_item_id = UUID(order_data["items"][0]["catalog_item_id"])
+
+    old_snapshot = adapter.get_inventory(catalog_item_id)
+    assert old_snapshot is not None
+
+    adapter._inventory[catalog_item_id] = old_snapshot.model_copy(
+        update={
+            "observed_at": datetime.now(timezone.utc) - timedelta(days=2)
+        }
+    )
+
+    response = client.post(
+        f"/orders/{order_id}/supplier-confirmation",
+    )
+
+    assert response.status_code == 422
+    assert "Данные об остатке устарели" in response.json()["detail"]
+
+    stored_order = client.app.state.order_repository.get(UUID(order_id))
+    assert stored_order is not None
+    assert stored_order.status.value == "pending_supplier_confirmation"
+    assert stored_order.supplier_confirmed_at is None
+
+
 def test_supplier_cannot_confirm_before_buyer(client) -> None:
     rfq_id, offer_data = _create_rfq_and_offer(client)
 
