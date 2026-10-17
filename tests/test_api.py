@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from rlt_startup.models.supplier_data import (
     InventorySnapshot,
@@ -73,6 +73,16 @@ def test_seller_workflow_prepares_and_compares_offers(client) -> None:
     assert data["comparisons"][0]["eligible"] is True
     assert Decimal(data["comparisons"][0]["total_price"]) == Decimal("15000")
 
+    offer_data = data["preparations"][str(supplier_id)]["offer"]
+    offer_id = UUID(offer_data["id"])
+
+    stored_offer = client.app.state.offer_repository.get(offer_id)
+
+    assert stored_offer is not None
+    assert stored_offer.id == offer_id
+    assert stored_offer.rfq_id == UUID(rfq_id)
+    assert stored_offer.supplier_organization_id == supplier_id
+
 
 def test_seller_workflow_returns_404_for_unknown_rfq(client) -> None:
     response = client.post(
@@ -143,3 +153,424 @@ def test_seller_workflow_rejects_duplicate_supplier_ids(client) -> None:
     )
 
     assert response.status_code == 422
+
+
+
+def _create_rfq_and_offer(client):
+    """Создать RFQ и получить сохранённое предложение через API."""
+    supplier_id = uuid4()
+    catalog_item = SupplierCatalogItem(
+        supplier_organization_id=supplier_id,
+        product_name="Стальной лист",
+        unit="кг",
+        unit_price="150",
+        currency="RUB",
+    )
+    adapter = InMemoryCatalogPolicyAdapter(
+        catalog_items=[catalog_item],
+        inventory_snapshots=[
+            InventorySnapshot(
+                catalog_item_id=catalog_item.id,
+                available_quantity="200",
+                observed_at=datetime.now(timezone.utc)
+                - timedelta(minutes=5),
+                source="order-api-test",
+            )
+        ],
+        policies=[
+            SupplierPolicy(
+                supplier_organization_id=supplier_id,
+                currency="RUB",
+                minimum_order_value="0",
+                max_offer_validity_days=7,
+            )
+        ],
+    )
+    client.app.state.supplier_adapters = {supplier_id: adapter}
+
+    rfq_response = client.post(
+        "/rfqs",
+        json={
+            "buyer_organization_id": str(uuid4()),
+            "currency": "RUB",
+            "max_unit_price": "200",
+            "items": [
+                {
+                    "product_name": "Стальной лист",
+                    "quantity": "100",
+                    "unit": "кг",
+                }
+            ],
+        },
+    )
+    assert rfq_response.status_code == 201
+    rfq_id = rfq_response.json()["id"]
+
+    workflow_response = client.post(
+        f"/rfqs/{rfq_id}/seller-offer-workflow",
+        json={"supplier_ids": [str(supplier_id)]},
+    )
+    assert workflow_response.status_code == 200
+
+    offer_data = workflow_response.json()["preparations"][
+        str(supplier_id)
+    ]["offer"]
+    assert offer_data is not None
+
+    return rfq_id, offer_data
+
+
+def test_create_order_from_saved_offer(client) -> None:
+    rfq_id, offer_data = _create_rfq_and_offer(client)
+    offer_id = offer_data["id"]
+
+    response = client.post(
+        f"/rfqs/{rfq_id}/orders",
+        json={"offer_id": offer_id},
+    )
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["rfq_id"] == rfq_id
+    assert data["offer_id"] == offer_id
+    assert data["status"] == "pending_buyer_confirmation"
+    assert Decimal(data["total_amount"]) == Decimal("15000")
+    assert data["currency"] == "RUB"
+
+    order_id = UUID(data["id"])
+    stored_order = client.app.state.order_repository.get(order_id)
+    assert stored_order is not None
+    assert stored_order.id == order_id
+    assert stored_order.offer_id == UUID(offer_id)
+
+
+def test_create_order_returns_404_for_unknown_rfq(client) -> None:
+    response = client.post(
+        f"/rfqs/{uuid4()}/orders",
+        json={"offer_id": str(uuid4())},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "RFQ not found"
+
+
+def test_create_order_returns_404_for_unknown_offer(client) -> None:
+    rfq_response = client.post(
+        "/rfqs",
+        json={
+            "buyer_organization_id": str(uuid4()),
+            "items": [
+                {
+                    "product_name": "Стальной лист",
+                    "quantity": "100",
+                    "unit": "кг",
+                }
+            ],
+        },
+    )
+    assert rfq_response.status_code == 201
+
+    response = client.post(
+        f"/rfqs/{rfq_response.json()['id']}/orders",
+        json={"offer_id": str(uuid4())},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Offer not found"
+
+
+def test_create_order_rejects_offer_from_another_rfq(client) -> None:
+    rfq_id, offer_data = _create_rfq_and_offer(client)
+
+    another_rfq_response = client.post(
+        "/rfqs",
+        json={
+            "buyer_organization_id": str(uuid4()),
+            "items": [
+                {
+                    "product_name": "Стальной лист",
+                    "quantity": "100",
+                    "unit": "кг",
+                }
+            ],
+        },
+    )
+    assert another_rfq_response.status_code == 201
+    another_rfq_id = another_rfq_response.json()["id"]
+
+    response = client.post(
+        f"/rfqs/{another_rfq_id}/orders",
+        json={"offer_id": offer_data["id"]},
+    )
+
+    assert response.status_code == 422
+
+
+def test_create_order_rejects_client_supplied_price(client) -> None:
+    rfq_id, offer_data = _create_rfq_and_offer(client)
+
+    response = client.post(
+        f"/rfqs/{rfq_id}/orders",
+        json={
+            "offer_id": offer_data["id"],
+            "unit_price": "1",
+        },
+    )
+
+    assert response.status_code == 422
+
+
+
+def test_buyer_can_confirm_order(client) -> None:
+    rfq_id, offer_data = _create_rfq_and_offer(client)
+
+    create_response = client.post(
+        f"/rfqs/{rfq_id}/orders",
+        json={"offer_id": offer_data["id"]},
+    )
+    assert create_response.status_code == 201
+    order_id = create_response.json()["id"]
+
+    response = client.post(
+        f"/orders/{order_id}/buyer-confirmation",
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "pending_supplier_confirmation"
+    assert data["buyer_confirmed_at"] is not None
+    assert data["supplier_confirmed_at"] is None
+
+    stored_order = client.app.state.order_repository.get(UUID(order_id))
+    assert stored_order is not None
+    assert stored_order.status.value == "pending_supplier_confirmation"
+
+
+def test_buyer_confirmation_returns_404_for_unknown_order(client) -> None:
+    response = client.post(
+        f"/orders/{uuid4()}/buyer-confirmation",
+    )
+
+    assert response.status_code == 404
+
+
+def test_buyer_cannot_confirm_order_twice(client) -> None:
+    rfq_id, offer_data = _create_rfq_and_offer(client)
+
+    create_response = client.post(
+        f"/rfqs/{rfq_id}/orders",
+        json={"offer_id": offer_data["id"]},
+    )
+    assert create_response.status_code == 201
+    order_id = create_response.json()["id"]
+
+    first_response = client.post(
+        f"/orders/{order_id}/buyer-confirmation",
+    )
+    assert first_response.status_code == 200
+
+    second_response = client.post(
+        f"/orders/{order_id}/buyer-confirmation",
+    )
+    assert second_response.status_code == 422
+
+
+def test_supplier_can_confirm_after_buyer(client) -> None:
+    rfq_id, offer_data = _create_rfq_and_offer(client)
+
+    create_response = client.post(
+        f"/rfqs/{rfq_id}/orders",
+        json={"offer_id": offer_data["id"]},
+    )
+    assert create_response.status_code == 201
+    order_id = create_response.json()["id"]
+
+    buyer_response = client.post(
+        f"/orders/{order_id}/buyer-confirmation",
+    )
+    assert buyer_response.status_code == 200
+
+    supplier_response = client.post(
+        f"/orders/{order_id}/supplier-confirmation",
+    )
+
+    assert supplier_response.status_code == 200
+    data = supplier_response.json()
+    assert data["status"] == "order_confirmed"
+    assert data["buyer_confirmed_at"] is not None
+    assert data["supplier_confirmed_at"] is not None
+
+    stored_order = client.app.state.order_repository.get(UUID(order_id))
+    assert stored_order is not None
+    assert stored_order.status.value == "order_confirmed"
+
+
+def test_supplier_cannot_confirm_before_buyer(client) -> None:
+    rfq_id, offer_data = _create_rfq_and_offer(client)
+
+    create_response = client.post(
+        f"/rfqs/{rfq_id}/orders",
+        json={"offer_id": offer_data["id"]},
+    )
+    assert create_response.status_code == 201
+    order_id = create_response.json()["id"]
+
+    response = client.post(
+        f"/orders/{order_id}/supplier-confirmation",
+    )
+
+    assert response.status_code == 422
+
+    stored_order = client.app.state.order_repository.get(UUID(order_id))
+    assert stored_order is not None
+    assert stored_order.status.value == "pending_buyer_confirmation"
+
+
+def test_supplier_confirmation_returns_404_for_unknown_order(client) -> None:
+    response = client.post(
+        f"/orders/{uuid4()}/supplier-confirmation",
+    )
+
+    assert response.status_code == 404
+
+
+def test_supplier_confirmation_requires_adapter(client) -> None:
+    rfq_id, offer_data = _create_rfq_and_offer(client)
+
+    create_response = client.post(
+        f"/rfqs/{rfq_id}/orders",
+        json={"offer_id": offer_data["id"]},
+    )
+    assert create_response.status_code == 201
+    order_id = create_response.json()["id"]
+
+    client.app.state.supplier_adapters = {}
+
+    buyer_response = client.post(
+        f"/orders/{order_id}/buyer-confirmation",
+    )
+    assert buyer_response.status_code == 200
+
+    response = client.post(
+        f"/orders/{order_id}/supplier-confirmation",
+    )
+
+    assert response.status_code == 422
+
+    stored_order = client.app.state.order_repository.get(UUID(order_id))
+    assert stored_order is not None
+    assert stored_order.status.value == "pending_supplier_confirmation"
+
+
+def test_buyer_can_reject_order(client):
+    rfq_id, offer_data = _create_rfq_and_offer(client)
+
+    response = client.post(
+        f"/rfqs/{rfq_id}/orders",
+        json={"offer_id": offer_data["id"]},
+    )
+    assert response.status_code == 201
+    order_id = response.json()["id"]
+
+    response = client.post(
+        f"/orders/{order_id}/buyer-rejection",
+        json={"reason": "Изменились потребности покупателя"},
+    )
+
+    assert response.status_code == 200
+    order = response.json()
+    assert order["status"] == "rejected"
+    assert order["rejected_by"] == "buyer"
+    assert order["rejection_reason"] == "Изменились потребности покупателя"
+
+
+def test_supplier_can_reject_after_buyer_confirmation(client):
+    rfq_id, offer_data = _create_rfq_and_offer(client)
+
+    response = client.post(
+        f"/rfqs/{rfq_id}/orders",
+        json={"offer_id": offer_data["id"]},
+    )
+    assert response.status_code == 201
+    order_id = response.json()["id"]
+
+    response = client.post(f"/orders/{order_id}/buyer-confirmation")
+    assert response.status_code == 200
+
+    response = client.post(
+        f"/orders/{order_id}/supplier-rejection",
+        json={"reason": "Не можем выполнить заказ в срок"},
+    )
+
+    assert response.status_code == 200
+    order = response.json()
+    assert order["status"] == "rejected"
+    assert order["rejected_by"] == "supplier"
+    assert order["rejection_reason"] == "Не можем выполнить заказ в срок"
+
+
+def test_rejection_requires_non_empty_reason(client):
+    rfq_id, offer_data = _create_rfq_and_offer(client)
+
+    response = client.post(
+        f"/rfqs/{rfq_id}/orders",
+        json={"offer_id": offer_data["id"]},
+    )
+    assert response.status_code == 201
+    order_id = response.json()["id"]
+
+    response = client.post(
+        f"/orders/{order_id}/buyer-rejection",
+        json={"reason": "   "},
+    )
+
+    assert response.status_code == 422
+
+
+def test_supplier_cannot_reject_before_buyer_confirmation(client):
+    rfq_id, offer_data = _create_rfq_and_offer(client)
+
+    response = client.post(
+        f"/rfqs/{rfq_id}/orders",
+        json={"offer_id": offer_data["id"]},
+    )
+    assert response.status_code == 201
+    order_id = response.json()["id"]
+
+    response = client.post(
+        f"/orders/{order_id}/supplier-rejection",
+        json={"reason": "Отказ поставщика"},
+    )
+
+    assert response.status_code == 422
+
+    order = client.app.state.order_repository.get(UUID(order_id))
+    assert order is not None
+    assert order.status.value == "pending_buyer_confirmation"
+
+
+def test_rejected_order_cannot_be_rejected_again(client):
+    rfq_id, offer_data = _create_rfq_and_offer(client)
+
+    response = client.post(
+        f"/rfqs/{rfq_id}/orders",
+        json={"offer_id": offer_data["id"]},
+    )
+    assert response.status_code == 201
+    order_id = response.json()["id"]
+
+    first = client.post(
+        f"/orders/{order_id}/buyer-rejection",
+        json={"reason": "Первоначальный отказ"},
+    )
+    assert first.status_code == 200
+
+    second = client.post(
+        f"/orders/{order_id}/buyer-rejection",
+        json={"reason": "Повторный отказ"},
+    )
+    assert second.status_code == 422
+
+    order = client.app.state.order_repository.get(UUID(order_id))
+    assert order is not None
+    assert order.rejection_reason == "Первоначальный отказ"
