@@ -405,7 +405,6 @@ def test_supplier_can_confirm_after_buyer(client) -> None:
     assert stored_order.status.value == "order_confirmed"
 
 
-
 def test_supplier_confirmation_rejected_when_stock_becomes_insufficient(client):
     rfq_id, offer_data = _create_rfq_and_offer(client)
 
@@ -543,6 +542,51 @@ def test_supplier_confirmation_requires_adapter(client) -> None:
     stored_order = client.app.state.order_repository.get(UUID(order_id))
     assert stored_order is not None
     assert stored_order.status.value == "pending_supplier_confirmation"
+
+
+def test_supplier_can_confirm_order_after_catalog_price_changes(client):
+    rfq_id, offer_data = _create_rfq_and_offer(client)
+
+    create_response = client.post(
+        f"/rfqs/{rfq_id}/orders",
+        json={"offer_id": offer_data["id"]},
+    )
+    assert create_response.status_code == 201
+
+    order_data = create_response.json()
+    order_id = order_data["id"]
+    original_total = Decimal(order_data["total_amount"])
+    original_price = Decimal(order_data["items"][0]["unit_price"])
+
+    supplier_id = UUID(offer_data["supplier_organization_id"])
+    adapter = client.app.state.supplier_adapters[supplier_id]
+    catalog_item_id = UUID(order_data["items"][0]["catalog_item_id"])
+
+    catalog_item = next(
+        item
+        for item in adapter.list_catalog_items(supplier_id)
+        if item.id == catalog_item_id
+    )
+
+    adapter._catalog_items[catalog_item_id] = catalog_item.model_copy(
+        update={"unit_price": catalog_item.unit_price + Decimal("50")}
+    )
+
+    buyer_response = client.post(
+        f"/orders/{order_id}/buyer-confirmation",
+    )
+    assert buyer_response.status_code == 200
+
+    supplier_response = client.post(
+        f"/orders/{order_id}/supplier-confirmation",
+    )
+
+    assert supplier_response.status_code == 200
+
+    confirmed_order = supplier_response.json()
+    assert confirmed_order["status"] == "order_confirmed"
+    assert Decimal(confirmed_order["total_amount"]) == original_total
+    assert Decimal(confirmed_order["items"][0]["unit_price"]) == original_price
 
 
 def test_buyer_can_reject_order(client):
