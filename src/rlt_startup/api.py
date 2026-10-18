@@ -25,6 +25,10 @@ from rlt_startup.repositories.order_repository import (
     OrderAlreadyExistsError,
     OrderRepository,
 )
+from rlt_startup.services.document_generation import (
+    DocumentGenerationError,
+    generate_document_drafts,
+)
 from rlt_startup.services.offer_validation import OfferValidationError
 from rlt_startup.services.order_workflow import (
     OrderWorkflowError,
@@ -344,3 +348,26 @@ def supplier_rejection(
 
     repository.update(updated_order)
     return updated_order
+
+
+@app.get("/orders/{order_id}/documents", tags=["orders"])
+def get_order_documents(
+    order_id: UUID,
+    repository: OrderRepository = Depends(get_order_repository),
+):
+    order = repository.get(order_id)
+
+    if order is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Order not found",
+        )
+
+    try:
+        return generate_document_drafts(order)
+    except DocumentGenerationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+
