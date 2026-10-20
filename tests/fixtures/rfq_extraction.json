@@ -1,0 +1,164 @@
+[
+  {
+    "id": "rfq-01",
+    "text": "Нужно 100 кг стального листа, максимум 200 рублей за килограмм. Валюта RUB. Доставка на демонстрационный склад.",
+    "expected": {
+      "product_name": "стальной лист",
+      "quantity": 100,
+      "unit": "кг",
+      "max_unit_price": 200,
+      "currency": "RUB",
+      "delivery_destination": "демонстрационный склад",
+      "missing_fields": []
+    }
+  },
+  {
+    "id": "rfq-02",
+    "text": "Нужны стальные листы. Количество, максимальная цена и место доставки пока не определены.",
+    "expected": {
+      "product_name": "стальные листы",
+      "quantity": null,
+      "unit": null,
+      "max_unit_price": null,
+      "currency": null,
+      "delivery_destination": null,
+      "missing_fields": [
+        "quantity",
+        "unit",
+        "max_unit_price",
+        "currency",
+        "delivery_destination"
+      ]
+    }
+  },
+  {
+    "id": "rfq-03",
+    "text": "Закажите 25 листов нержавеющей стали, цена за весь заказ не выше 75000 RUB. Привезти на склад в Казани.",
+    "expected": {
+      "product_name": "лист нержавеющей стали",
+      "quantity": 25,
+      "unit": "лист",
+      "max_unit_price": null,
+      "currency": "RUB",
+      "delivery_destination": "склад в Казани",
+      "missing_fields": ["max_unit_price"]
+    }
+  },
+  {
+    "id": "rfq-04",
+    "text": "Поставка 2,5 тонны алюминиевого профиля. Цена максимум 180000 рублей за тонну, доставка в Самару.",
+    "expected": {
+      "product_name": "алюминиевый профиль",
+      "quantity": 2.5,
+      "unit": "т",
+      "max_unit_price": 180000,
+      "currency": "RUB",
+      "delivery_destination": "Самара",
+      "missing_fields": []
+    }
+  },
+  {
+    "id": "rfq-05",
+    "text": "Ищем 500 штук подшипников по цене до 12,50 EUR за штуку. Доставка в Берлин.",
+    "expected": {
+      "product_name": "подшипник",
+      "quantity": 500,
+      "unit": "шт",
+      "max_unit_price": 12.5,
+      "currency": "EUR",
+      "delivery_destination": "Берлин",
+      "missing_fields": []
+    }
+  },
+  {
+    "id": "rfq-06",
+    "text": "Нужны 40 метров кабеля ВВГ. Бюджет пока не согласован, поставка в офис заказчика.",
+    "expected": {
+      "product_name": "кабель ВВГ",
+      "quantity": 40,
+      "unit": "м",
+      "max_unit_price": null,
+      "currency": null,
+      "delivery_destination": "офис заказчика",
+      "missing_fields": ["max_unit_price", "currency"]
+    }
+  },
+  {
+    "id": "rfq-07",
+    "text": "Пришлите предложение на 10 насосов. Цена не выше 50000 рублей за штуку.",
+    "expected": {
+      "product_name": "насос",
+      "quantity": 10,
+      "unit": "шт",
+      "max_unit_price": 50000,
+      "currency": "RUB",
+      "delivery_destination": null,
+      "missing_fields": ["delivery_destination"]
+    }
+  },
+  {
+    "id": "rfq-08",
+    "text": "Нужно около ста килограммов медной проволоки, ориентир по цене — до 900 руб./кг. Адрес поставки уточним позднее.",
+    "expected": {
+      "product_name": "медная проволока",
+      "quantity": 100,
+      "unit": "кг",
+      "max_unit_price": 900,
+      "currency": "RUB",
+      "delivery_destination": null,
+      "missing_fields": ["delivery_destination"]
+    }
+  },
+  {
+    "id": "rfq-09",
+    "text": "Нужны 20 коробок крепежа. Цена до 300 рублей. Доставка в офис.",
+    "expected": {
+      "product_name": "крепеж",
+      "quantity": 20,
+      "unit": "коробка",
+      "max_unit_price": 300,
+      "currency": "RUB",
+      "delivery_destination": "офис",
+      "missing_fields": []
+    }
+  },
+  {
+    "id": "rfq-10",
+    "text": "Нужно 100 кг стального листа. В одном месте указана максимальная цена 200 RUB/кг, в другом — 250 RUB/кг. Доставка в Казань.",
+    "expected": {
+      "product_name": "стальной лист",
+      "quantity": 100,
+      "unit": "кг",
+      "max_unit_price": null,
+      "currency": "RUB",
+      "delivery_destination": "Казань",
+      "missing_fields": ["max_unit_price"]
+    }
+  },
+  {
+    "id": "rfq-11",
+    "text": "Поставьте 300 кг цемента по цене до 8000 за тонну, валюта и место доставки пока не указаны.",
+    "expected": {
+      "product_name": "цемент",
+      "quantity": 300,
+      "unit": "кг",
+      "max_unit_price": 8000,
+      "currency": null,
+      "delivery_destination": null,
+      "missing_fields": ["currency", "delivery_destination"]
+    }
+  },
+  {
+    "id": "rfq-12",
+    "text": "Нужен листовой металл: 100 кг или 100 листов — пока не решили. Максимальная цена 200 RUB за кг.",
+    "expected": {
+      "product_name": "листовой металл",
+      "quantity": null,
+      "unit": null,
+      "max_unit_price": 200,
+      "currency": "RUB",
+      "delivery_destination": null,
+      "missing_fields": ["quantity", "unit", "delivery_destination"]
+    }
+  }
+]

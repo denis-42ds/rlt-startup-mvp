@@ -23,12 +23,19 @@ class OfferComparison(BaseModel):
     reasons: list[str]
 
 
-def compare_offer(offer: Offer, rfq: RFQ) -> OfferComparison:
+def compare_offer(
+        offer: Offer,
+        rfq: RFQ,
+        *,
+        now: datetime | None = None,
+        ) -> OfferComparison:
     """Проверяет выполнимость предложения и рассчитывает его стоимость."""
 
     validate_offer_against_rfq(offer, rfq)
 
-    now = datetime.now(timezone.utc)
+    if now is None:
+        now = datetime.now(timezone.utc)
+
     reasons: list[str] = []
     total_price = Decimal("0")
 
@@ -75,14 +82,18 @@ def compare_offer(offer: Offer, rfq: RFQ) -> OfferComparison:
         reasons=reasons,
     )
 
-
 def compare_offers(
     offers: list[Offer],
     rfq: RFQ,
+    *,
+    now: datetime | None = None,
 ) -> list[OfferComparison]:
     """Сравнивает предложения и группирует результаты по валюте."""
 
-    results = [compare_offer(offer, rfq) for offer in offers]
+    results = [
+        compare_offer(offer, rfq, now=now)
+        for offer in offers
+    ]
 
     return sorted(
         results,
@@ -94,4 +105,3 @@ def compare_offers(
             else Decimal("0"),
         ),
     )
-
