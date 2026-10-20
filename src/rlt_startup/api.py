@@ -37,6 +37,12 @@ from rlt_startup.services.order_workflow import (
     reject_order,
     supplier_confirm_order,
 )
+from rlt_startup.services.rfq_extraction import (
+    RFQExtraction,
+    RFQModelResponseError,
+    RFQModelUnavailableError,
+    extract_rfq,
+)
 
 app = FastAPI(
     title="RLT.Startup API",
@@ -60,6 +66,22 @@ class CreateOrderRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     offer_id: UUID
+
+
+class RFQExtractionRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        str_strip_whitespace=True,
+    )
+
+    text: str = Field(min_length=1, max_length=10000)
+
+
+#class RFQExtractionResponse(RFQExtraction):
+#    """Результат извлечения с признаком готовности к созданию RFQ."""
+
+#    ready_to_create_rfq: bool
+
 
 class RejectOrderRequest(BaseModel):
     model_config = ConfigDict(
@@ -113,6 +135,38 @@ def create_rfq(
 
     return rfq
 
+
+@app.post(
+    "/rfqs/extract",
+    response_model=RFQExtraction,
+    tags=["rfqs"],
+)
+def extract_rfq_from_text(
+    payload: RFQExtractionRequest,
+) -> RFQExtraction:
+    """Извлекает поля RFQ из текста без создания заявки."""
+
+    try:
+        result = extract_rfq(payload.text)
+        return result # RFQExtractionResponse(
+#            **result.model_dump(),
+#            ready_to_create_rfq=result.ready_to_create_rfq,
+#        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+    except RFQModelUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Локальная модель временно недоступна",
+        ) from exc
+    except RFQModelResponseError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Не удалось безопасно обработать ответ локальной модели",
+        ) from exc
 
 @app.get("/rfqs/{rfq_id}", response_model=RFQ, tags=["rfqs"])
 def get_rfq(

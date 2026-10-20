@@ -7,7 +7,13 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    computed_field,
+)
 
 
 DEFAULT_MODEL = "qwen2.5:3b"
@@ -75,6 +81,7 @@ class RFQExtraction(BaseModel):
 
         return result.model_copy(update={"missing_fields": missing})
 
+    @computed_field
     @property
     def ready_to_create_rfq(self) -> bool:
         """Минимальные условия для создания позиции и ограничения цены."""
