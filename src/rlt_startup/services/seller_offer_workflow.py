@@ -62,7 +62,7 @@ def run_seller_offer_workflow(
         if result.ready and result.offer is not None:
             offers.append(result.offer)
 
-    comparisons = compare_offers(offers, rfq)
+    comparisons = compare_offers(offers, rfq, now=now)
 
     return SellerOfferWorkflowResult(
         preparations=preparations,
