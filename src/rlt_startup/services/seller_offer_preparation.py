@@ -62,17 +62,33 @@ def prepare_seller_offer(
     total_price = Decimal("0")
 
     for requested in rfq.items:
-        matching = [
+        matching_by_name = [
             item
             for item in catalog
             if _normalize_name(item.product_name)
             == _normalize_name(requested.product_name)
-            and item.unit == requested.unit
+        ]
+
+        if not matching_by_name:
+            reasons.append(
+                f"Товар не найден в каталоге: {requested.product_name}"
+            )
+            continue
+
+        matching = [
+            item
+            for item in matching_by_name
+            if item.unit == requested.unit
         ]
 
         if not matching:
+            catalog_units = ", ".join(
+                sorted({item.unit for item in matching_by_name})
+            )
             reasons.append(
-                f"Товар не найден в каталоге: {requested.product_name}"
+                f"Несовпадение единиц измерения для товара "
+                f"{requested.product_name}: запрошено "
+                f"«{requested.unit}», в каталоге: «{catalog_units}»"
             )
             continue
 

@@ -279,6 +279,42 @@ def test_ambiguous_catalog_match_prevents_offer(scenario):
     assert any("Неоднозначное" in r for r in result.reasons)
 
 
+def test_unit_mismatch_reports_catalog_units(scenario):
+    supplier_id, rfq, catalog_item, adapter = scenario
+
+    rfq.items[0].unit = "шт"
+
+    result = prepare_seller_offer(
+        rfq, supplier_id, adapter, now=NOW
+    )
+
+    assert not result.ready
+    assert result.offer is None
+    assert any(
+        "Несовпадение единиц измерения" in reason
+        and "шт" in reason
+        and "м" in reason
+        for reason in result.reasons
+    )
+
+
+def test_missing_product_reports_catalog_absence(scenario):
+    supplier_id, rfq, _, adapter = scenario
+
+    rfq.items[0].product_name = "Несуществующий товар"
+
+    result = prepare_seller_offer(
+        rfq, supplier_id, adapter, now=NOW
+    )
+
+    assert not result.ready
+    assert result.offer is None
+    assert any(
+        "Товар не найден в каталоге" in reason
+        for reason in result.reasons
+    )
+
+
 def test_naive_now_is_rejected(scenario):
     supplier_id, rfq, _, adapter = scenario
 
@@ -289,4 +325,3 @@ def test_naive_now_is_rejected(scenario):
             adapter,
             now=datetime(2026, 10, 11, 12, 0),
         )
-
