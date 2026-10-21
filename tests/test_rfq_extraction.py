@@ -110,3 +110,25 @@ def test_empty_request_is_rejected_without_calling_model(monkeypatch):
 
     with pytest.raises(ValueError):
         service.extract_rfq("   ")
+
+
+
+def test_generic_product_name_is_not_ready():
+    result = service.RFQExtraction.from_model_data({
+        "product_name": "товар",
+        "quantity": 20,
+        "unit": "штука",
+        "max_unit_price": None,
+        "currency": None,
+        "delivery_destination": None,
+    })
+
+    assert not result.ready_to_create_rfq
+
+
+def test_quantity_unit_mismatch_is_not_silently_accepted():
+    # Исходный текст говорит о коробках, а модель вернула штуки.
+    # Сейчас сервис не знает исходный текст и не может проверить это
+    # расхождение. Тест ниже пока фиксировать нельзя без изменения
+    # контракта извлечения.
+    pass
