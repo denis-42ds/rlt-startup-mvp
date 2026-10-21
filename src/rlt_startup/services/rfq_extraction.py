@@ -30,6 +30,27 @@ EXTRACTABLE_FIELDS = (
 )
 
 
+def detect_explicit_currency(text: str) -> str | None:
+    """Распознаёт валюту только по явным обозначениям в тексте."""
+    import re
+
+    patterns = {
+        "RUB": r"(?<!\w)(?:руб(?:лей|ля|ль)?|руб\.?|₽)(?!\w)",
+        "USD": r"(?<!\w)(?:USD|доллар(?:ов|а)?|\$)(?!\w)",
+        "EUR": r"(?<!\w)(?:EUR|евро|€)(?!\w)",
+        "CNY": r"(?<!\w)(?:CNY|юан(?:ей|я)?)(?!\w)",
+        "TRY": r"(?<!\w)(?:TRY|лир(?:ы|а|у)?|₺)(?!\w)",
+    }
+
+    matches = {
+        currency
+        for currency, pattern in patterns.items()
+        if re.search(pattern, text, flags=re.IGNORECASE)
+    }
+
+    return next(iter(matches)) if len(matches) == 1 else None
+
+
 class RFQExtractionError(RuntimeError):
     """Базовая ошибка извлечения заявки."""
 
@@ -84,16 +105,33 @@ class RFQExtraction(BaseModel):
     @computed_field
     @property
     def ready_to_create_rfq(self) -> bool:
-        """Минимальные условия для создания позиции и ограничения цены."""
-        required = ("product_name", "quantity", "unit")
-        if any(getattr(self, field) is None for field in required):
-            return False
+        product_name = (self.product_name or "").strip().casefold()
 
-        if self.max_unit_price is not None and self.currency is None:
-            return False
+        generic_product_names = {
+            "",
+            "товар",
+            "продукт",
+            "вещь",
+            "item",
+            "product",
+        }
 
-        return True
+        has_specific_product = product_name not in generic_product_names
+        has_required_fields = (
+            self.quantity is not None
+            and self.unit is not None
+            and bool(self.unit.strip())
+        )
+        has_valid_price_currency = (
+            self.max_unit_price is None
+            or self.currency is not None
+        )
 
+        return (
+            has_specific_product
+            and has_required_fields
+            and has_valid_price_currency
+        )
 
 SYSTEM_PROMPT = """
 Ты извлекаешь структурированные данные из заявки покупателя B2B.
@@ -203,7 +241,25 @@ def extract_rfq(text: str) -> RFQExtraction:
         raise RFQModelResponseError("Ожидался JSON-объект")
 
     try:
-        return RFQExtraction.from_model_data(model_data)
+        result = RFQExtraction.from_model_data(model_data)
+
+        # Явное обозначение валюты в исходном тексте приоритетнее
+        # предположения модели. Если маркер неоднозначен, функция
+        # возвращает None и автоматическая подстановка не выполняется.
+        detected_currency = detect_explicit_currency(text)
+
+        if detected_currency is not None:
+            result = RFQExtraction.from_model_data(
+                {
+                    **result.model_dump(
+                        exclude={"missing_fields", "ready_to_create_rfq"}
+                    ),
+                    "currency": detected_currency,
+                }
+            )
+
+        return result
+
     except (ValidationError, TypeError, ValueError) as exc:
         raise RFQModelResponseError(
             "Поля ответа модели не прошли проверку"
