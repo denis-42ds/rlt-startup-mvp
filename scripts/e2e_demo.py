@@ -265,19 +265,31 @@ def main(interactive: bool = False) -> None:
         result_b = preparations[SUPPLIER_B_ID]
         result_c = preparations[SUPPLIER_C_ID]
 
-        if interactive and not any(
-            result["ready"] for result in preparations.values()
-        ):
-            print(
-                "\nE2E STOP: ни один демо-поставщик не смог подготовить "
-                "предложение по этой заявке."
-            )
-            print(
-                "RFQ создана, но заказ не создавался. "
-                "Проверьте товар, единицу измерения и количество."
-            )
+        if interactive:
+            if not any(
+                result["ready"] for result in preparations.values()
+            ):
+                print(
+                    "\nE2E STOP: ни один демо-поставщик не смог подготовить "
+                    "предложение по этой заявке."
+                )
+                print(
+                    "RFQ создана, но заказ не создавался. "
+                    "Проверьте товар, единицу измерения и количество."
+                )
+            else:
+                print(
+                    "\nИнтерактивная проверка завершена: результаты "
+                    "подготовки и сравнения предложений показаны выше."
+                )
+                print("Заказ автоматически не создавался.")
+
             print(f"RFQ ID: {rfq_id}")
             return
+
+        result_a = preparations[SUPPLIER_A_ID]
+        result_b = preparations[SUPPLIER_B_ID]
+        result_c = preparations[SUPPLIER_C_ID]
 
         require(result_a["ready"], "Поставщик A должен быть готов")
         require(result_b["ready"], "Поставщик B должен быть готов")
