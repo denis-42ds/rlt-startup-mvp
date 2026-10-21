@@ -226,12 +226,40 @@ def main(interactive: bool = False) -> None:
         )
 
         preparations = workflow["preparations"]
+
+        print("\n=== Результаты обработки заявки ===")
+
+        supplier_names = {
+            SUPPLIER_A_ID: "Поставщик A",
+            SUPPLIER_B_ID: "Поставщик B",
+            SUPPLIER_C_ID: "Поставщик C",
+        }
+
         for supplier_id, result in preparations.items():
-            print(
-                f"Поставщик {supplier_id}: "
-                f"ready={result['ready']}, "
-                f"reasons={result['reasons']}"
-            )
+            name = supplier_names.get(supplier_id, f"Поставщик {supplier_id}")
+
+            if result["ready"]:
+                offer = result.get("offer") or {}
+                print(f"\n{name}: ПРЕДЛОЖЕНИЕ ГОТОВО")
+                if offer.get("unit_price") is not None:
+                    print(f"  Цена за единицу: {offer['unit_price']}")
+                if offer.get("currency"):
+                    print(f"  Валюта: {offer['currency']}")
+                if offer.get("quantity") is not None:
+                    print(f"  Количество: {offer['quantity']}")
+            else:
+                print(f"\n{name}: ПРЕДЛОЖЕНИЕ НЕ ПОДГОТОВЛЕНО")
+                for reason in result.get("reasons", []):
+                    print(f"  Причина: {reason}")
+
+        comparisons = workflow.get("comparisons", [])
+
+        print("\n=== Сравнение предложений ===")
+        if comparisons:
+            for index, comparison in enumerate(comparisons, start=1):
+                print(f"{index}. {comparison}")
+        else:
+            print("Нет предложений, прошедших проверку.")
 
         result_a = preparations[SUPPLIER_A_ID]
         result_b = preparations[SUPPLIER_B_ID]
