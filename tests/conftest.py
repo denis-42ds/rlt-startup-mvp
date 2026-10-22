@@ -24,6 +24,7 @@ def client():
     buyer_token = "test-buyer-token"
     supplier_token = "test-supplier-token"
     other_buyer_token = "test-other-buyer-token"
+    orchestrator_token = "test-orchestrator-token"
 
     from rlt_startup.services.authentication import load_demo_credentials
 
@@ -48,16 +49,23 @@ def client():
                     "organization_id": str(other_buyer_org_id),
                     "role": "buyer",
                 },
+                {
+                    "token": orchestrator_token,
+                    "subject_id": str(uuid4()),
+                    "organization_id": str(uuid4()),
+                    "role": "orchestrator",
+                },
             ]
         )
     )
 
     app.state.test_buyer_org_id = buyer_org_id
     app.state.test_supplier_org_id = supplier_org_id
+    app.state.test_other_buyer_org_id = other_buyer_org_id
     app.state.test_buyer_token = buyer_token
     app.state.test_supplier_token = supplier_token
     app.state.test_other_buyer_token = other_buyer_token
-    app.state.test_other_buyer_org_id = other_buyer_org_id
+    app.state.test_orchestrator_token = orchestrator_token
 
     app.state.rfq_repository = InMemoryRFQRepository()
     app.state.offer_repository = InMemoryOfferRepository()
@@ -81,6 +89,7 @@ def client():
             "test_supplier_token",
             "test_other_buyer_token",
             "test_other_buyer_org_id",
+            "test_orchestrator_token",
         ):
             if hasattr(app.state, name):
                 delattr(app.state, name)
