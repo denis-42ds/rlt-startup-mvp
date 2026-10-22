@@ -155,6 +155,71 @@ def test_seller_workflow_rejects_duplicate_supplier_ids(client) -> None:
     assert response.status_code == 422
 
 
+def test_create_rfq_requires_authentication(client):
+    response = client.post(
+        "/rfqs",
+        headers={"Authorization": ""},
+        json={
+            "buyer_organization_id": str(uuid4()),
+            "items": [
+                {
+                    "product_name": "Стальной лист",
+                    "quantity": "100",
+                    "unit": "кг",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 401
+
+
+def test_create_rfq_rejects_supplier_role(client):
+    response = client.post(
+        "/rfqs",
+        headers={
+            "Authorization": (
+                f"Bearer {client.app.state.test_supplier_token}"
+            )
+        },
+        json={
+            "buyer_organization_id": str(uuid4()),
+            "items": [
+                {
+                    "product_name": "Стальной лист",
+                    "quantity": "100",
+                    "unit": "кг",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 403
+
+
+def test_create_rfq_uses_organization_from_token(client):
+    response = client.post(
+        "/rfqs",
+        json={
+            "buyer_organization_id": str(
+                client.app.state.test_other_buyer_org_id
+            ),
+            "items": [
+                {
+                    "product_name": "Стальной лист",
+                    "quantity": "100",
+                    "unit": "кг",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 201
+    assert (
+        response.json()["buyer_organization_id"]
+        == str(client.app.state.test_buyer_org_id)
+    )
+
 
 def _create_rfq_and_offer(client):
     """Создать RFQ и получить сохранённое предложение через API."""
@@ -242,6 +307,51 @@ def test_create_order_from_saved_offer(client) -> None:
     assert stored_order is not None
     assert stored_order.id == order_id
     assert stored_order.offer_id == UUID(offer_id)
+
+
+def test_create_order_requires_authentication(client) -> None:
+    rfq_id, offer_data = _create_rfq_and_offer(client)
+
+    response = client.post(
+        f"/rfqs/{rfq_id}/orders",
+        headers={"Authorization": ""},
+        json={"offer_id": offer_data["id"]},
+    )
+
+    assert response.status_code == 401
+
+
+def test_create_order_rejects_supplier_role(client) -> None:
+    rfq_id, offer_data = _create_rfq_and_offer(client)
+
+    response = client.post(
+        f"/rfqs/{rfq_id}/orders",
+        headers={
+            "Authorization": (
+                f"Bearer {client.app.state.test_supplier_token}"
+            )
+        },
+        json={"offer_id": offer_data["id"]},
+    )
+
+    assert response.status_code == 403
+
+
+def test_create_order_rejects_foreign_buyer_organization(client) -> None:
+    rfq_id, offer_data = _create_rfq_and_offer(client)
+
+    response = client.post(
+        f"/rfqs/{rfq_id}/orders",
+        headers={
+            "Authorization": (
+                f"Bearer {client.app.state.test_other_buyer_token}"
+            )
+        },
+        json={"offer_id": offer_data["id"]},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "RFQ not found"
 
 
 def test_create_order_returns_404_for_unknown_rfq(client) -> None:
@@ -701,3 +811,86 @@ def test_rejected_order_cannot_be_rejected_again(client):
     order = client.app.state.order_repository.get(UUID(order_id))
     assert order is not None
     assert order.rejection_reason == "Первоначальный отказ"
+
+
+
+def test_buyer_can_read_own_rfq(client):
+    create_response = client.post(
+        "/rfqs",
+        json={
+            "buyer_organization_id": str(uuid4()),
+            "items": [
+                {
+                    "product_name": "Стальной лист",
+                    "quantity": "100",
+                    "unit": "кг",
+                }
+            ],
+        },
+    )
+    assert create_response.status_code == 201
+
+    rfq_id = create_response.json()["id"]
+    response = client.get(f"/rfqs/{rfq_id}")
+
+    assert response.status_code == 200
+    assert response.json()["id"] == rfq_id
+    assert (
+        response.json()["buyer_organization_id"]
+        == str(client.app.state.test_buyer_org_id)
+    )
+
+
+def test_buyer_cannot_read_another_organizations_rfq(client):
+    create_response = client.post(
+        "/rfqs",
+        json={
+            "buyer_organization_id": str(uuid4()),
+            "items": [
+                {
+                    "product_name": "Стальной лист",
+                    "quantity": "100",
+                    "unit": "кг",
+                }
+            ],
+        },
+    )
+    assert create_response.status_code == 201
+    rfq_id = create_response.json()["id"]
+
+    response = client.get(
+        f"/rfqs/{rfq_id}",
+        headers={
+            "Authorization": (
+                "Bearer "
+                f"{client.app.state.test_other_buyer_token}"
+            )
+        },
+    )
+
+    assert response.status_code == 404
+
+
+def test_read_rfq_requires_authentication(client):
+    create_response = client.post(
+        "/rfqs",
+        json={
+            "buyer_organization_id": str(uuid4()),
+            "items": [
+                {
+                    "product_name": "Стальной лист",
+                    "quantity": "100",
+                    "unit": "кг",
+                }
+            ],
+        },
+    )
+    assert create_response.status_code == 201
+    rfq_id = create_response.json()["id"]
+
+    response = client.get(
+        f"/rfqs/{rfq_id}",
+        headers={"Authorization": ""},
+    )
+
+    assert response.status_code == 401

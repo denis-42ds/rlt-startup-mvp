@@ -1,3 +1,4 @@
+import os
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
@@ -43,6 +44,11 @@ from rlt_startup.services.rfq_extraction import (
     RFQModelUnavailableError,
     extract_rfq,
 )
+from rlt_startup.services.authentication import (
+    Identity,
+    authenticate_token,
+    load_demo_credentials,
+)
 
 app = FastAPI(
     title="RLT.Startup API",
@@ -55,6 +61,14 @@ app.state.offer_repository = InMemoryOfferRepository()
 app.state.order_repository = InMemoryOrderRepository()
 app.state.supplier_adapters = {}
 
+try:
+    app.state.demo_credentials = load_demo_credentials(
+        os.environ.get("RLT_DEMO_CREDENTIALS")
+    )
+except ValueError as exc:
+    raise RuntimeError(
+        "Invalid RLT_DEMO_CREDENTIALS configuration"
+    ) from exc
 
 class SellerOfferWorkflowRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -75,12 +89,6 @@ class RFQExtractionRequest(BaseModel):
     )
 
     text: str = Field(min_length=1, max_length=10000)
-
-
-#class RFQExtractionResponse(RFQExtraction):
-#    """Результат извлечения с признаком готовности к созданию RFQ."""
-
-#    ready_to_create_rfq: bool
 
 
 class RejectOrderRequest(BaseModel):
@@ -110,6 +118,21 @@ def get_supplier_adapters(
     return request.app.state.supplier_adapters
 
 
+def get_current_identity(request: Request) -> Identity:
+    return authenticate_token(
+        request.headers.get("Authorization"),
+        request.app.state.demo_credentials,
+    )
+
+
+def require_role(identity: Identity, allowed_role: str) -> None:
+    if identity.role != allowed_role:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions",
+        )
+
+
 @app.get("/health", tags=["system"])
 def health_check() -> dict[str, str]:
     return {"status": "ok"}
@@ -123,8 +146,16 @@ def health_check() -> dict[str, str]:
 )
 def create_rfq(
     rfq: RFQ,
+    identity: Identity = Depends(get_current_identity),
     repository: RFQRepository = Depends(get_rfq_repository),
 ) -> RFQ:
+    require_role(identity, "buyer")
+
+    # Организация определяется сервером, а не клиентским запросом.
+    rfq = rfq.model_copy(
+        update={"buyer_organization_id": identity.organization_id}
+    )
+
     try:
         repository.add(rfq)
     except RFQAlreadyExistsError as exc:
@@ -148,10 +179,7 @@ def extract_rfq_from_text(
 
     try:
         result = extract_rfq(payload.text)
-        return result # RFQExtractionResponse(
-#            **result.model_dump(),
-#            ready_to_create_rfq=result.ready_to_create_rfq,
-#        )
+        return result
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -168,20 +196,25 @@ def extract_rfq_from_text(
             detail="Не удалось безопасно обработать ответ локальной модели",
         ) from exc
 
+
 @app.get("/rfqs/{rfq_id}", response_model=RFQ, tags=["rfqs"])
 def get_rfq(
     rfq_id: UUID,
+    identity: Identity = Depends(get_current_identity),
     repository: RFQRepository = Depends(get_rfq_repository),
 ) -> RFQ:
+    require_role(identity, "buyer")
+
     rfq = repository.get(rfq_id)
 
-    if rfq is None:
+    if rfq is None or rfq.buyer_organization_id != identity.organization_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="RFQ not found",
         )
 
     return rfq
+
 
 @app.post(
     "/rfqs/{rfq_id}/seller-offer-workflow",
@@ -235,15 +268,19 @@ def execute_seller_offer_workflow(
     status_code=status.HTTP_201_CREATED,
     tags=["orders"],
 )
+
 def create_order(
     rfq_id: UUID,
     payload: CreateOrderRequest,
+    identity: Identity = Depends(get_current_identity),
     rfq_repository: RFQRepository = Depends(get_rfq_repository),
     offer_repository: OfferRepository = Depends(get_offer_repository),
     order_repository: OrderRepository = Depends(get_order_repository),
 ) -> Order:
+    require_role(identity, "buyer")
+
     rfq = rfq_repository.get(rfq_id)
-    if rfq is None:
+    if rfq is None or rfq.buyer_organization_id != identity.organization_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="RFQ not found",
@@ -424,4 +461,3 @@ def get_order_documents(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
-
