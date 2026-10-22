@@ -193,8 +193,10 @@ def create_rfq(
 )
 def extract_rfq_from_text(
     payload: RFQExtractionRequest,
+    identity: Identity = Depends(get_current_identity),
 ) -> RFQExtraction:
     """Извлекает поля RFQ из текста без создания заявки."""
+    require_role(identity, "buyer")
 
     try:
         result = extract_rfq(payload.text)
