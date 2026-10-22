@@ -86,3 +86,37 @@ def test_extract_rfq_returns_502_for_invalid_model_response(
     )
 
     assert response.status_code == 502
+
+
+def test_extract_rfq_requires_authentication(client, monkeypatch):
+    def should_not_run(text: str):
+        raise AssertionError("Model must not be called")
+
+    monkeypatch.setattr(api, "extract_rfq", should_not_run)
+
+    response = client.post(
+        "/rfqs/extract",
+        headers={"Authorization": ""},
+        json={"text": "100 кг стального листа"},
+    )
+
+    assert response.status_code == 401
+
+
+def test_extract_rfq_rejects_supplier_role(client, monkeypatch):
+    def should_not_run(text: str):
+        raise AssertionError("Model must not be called")
+
+    monkeypatch.setattr(api, "extract_rfq", should_not_run)
+
+    response = client.post(
+        "/rfqs/extract",
+        headers={
+            "Authorization": (
+                f"Bearer {client.app.state.test_supplier_token}"
+            )
+        },
+        json={"text": "100 кг стального листа"},
+    )
+
+    assert response.status_code == 403
