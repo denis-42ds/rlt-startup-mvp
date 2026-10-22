@@ -228,3 +228,44 @@ def test_supplier_can_access_own_confirmed_order_documents(client):
     )
 
     assert response.status_code == 200
+
+
+def test_supplier_cannot_access_another_suppliers_order_documents(client):
+    order = make_order().model_copy(
+        update={
+            "buyer_organization_id": client.app.state.test_buyer_org_id,
+#            "supplier_organization_id": client.app.state.test_other_buyer_org_id,
+            "supplier_organization_id": uuid4(),
+        }
+    )
+    client.app.state.order_repository.add(order)
+
+    response = client.get(
+        f"/orders/{order.id}/documents",
+        headers={
+            "Authorization": f"Bearer {client.app.state.test_supplier_token}"
+        },
+    )
+
+    assert response.status_code == 404
+
+
+def test_orchestrator_cannot_access_order_documents(client):
+    order = make_order().model_copy(
+        update={
+            "buyer_organization_id": client.app.state.test_buyer_org_id,
+            "supplier_organization_id": client.app.state.test_supplier_org_id,
+        }
+    )
+    client.app.state.order_repository.add(order)
+
+    response = client.get(
+        f"/orders/{order.id}/documents",
+        headers={
+            "Authorization": (
+                f"Bearer {client.app.state.test_orchestrator_token}"
+            )
+        },
+    )
+
+    assert response.status_code == 403
