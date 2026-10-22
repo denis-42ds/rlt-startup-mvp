@@ -223,7 +223,7 @@ def test_create_rfq_uses_organization_from_token(client):
 
 def _create_rfq_and_offer(client):
     """Создать RFQ и получить сохранённое предложение через API."""
-    supplier_id = uuid4()
+    supplier_id = client.app.state.test_supplier_org_id
     catalog_item = SupplierCatalogItem(
         supplier_organization_id=supplier_id,
         product_name="Стальной лист",
@@ -430,7 +430,6 @@ def test_create_order_rejects_client_supplied_price(client) -> None:
     assert response.status_code == 422
 
 
-
 def test_buyer_can_confirm_order(client) -> None:
     rfq_id, offer_data = _create_rfq_and_offer(client)
 
@@ -502,6 +501,11 @@ def test_supplier_can_confirm_after_buyer(client) -> None:
 
     supplier_response = client.post(
         f"/orders/{order_id}/supplier-confirmation",
+        headers={
+            "Authorization": (
+                f"Bearer {client.app.state.test_supplier_token}"
+                )
+            },
     )
 
     assert supplier_response.status_code == 200
@@ -544,8 +548,12 @@ def test_supplier_confirmation_rejected_when_stock_becomes_insufficient(client):
 
     response = client.post(
         f"/orders/{order_id}/supplier-confirmation",
+        headers={
+            "Authorization": (
+                f"Bearer {client.app.state.test_supplier_token}"
+            )
+        },
     )
-
     assert response.status_code == 422
     assert "Недостаточно товара на складе" in response.json()["detail"]
 
@@ -586,8 +594,12 @@ def test_supplier_confirmation_rejected_when_inventory_is_stale(client):
 
     response = client.post(
         f"/orders/{order_id}/supplier-confirmation",
+        headers={
+            "Authorization": (
+                f"Bearer {client.app.state.test_supplier_token}"
+            )
+        },
     )
-
     assert response.status_code == 422
     assert "Данные об остатке устарели" in response.json()["detail"]
 
@@ -609,6 +621,7 @@ def test_supplier_cannot_confirm_before_buyer(client) -> None:
 
     response = client.post(
         f"/orders/{order_id}/supplier-confirmation",
+        headers={"Authorization": (f"Bearer {client.app.state.test_supplier_token}")},
     )
 
     assert response.status_code == 422
@@ -645,8 +658,12 @@ def test_supplier_confirmation_requires_adapter(client) -> None:
 
     response = client.post(
         f"/orders/{order_id}/supplier-confirmation",
+        headers={
+            "Authorization": (
+                f"Bearer {client.app.state.test_supplier_token}"
+            )
+        },
     )
-
     assert response.status_code == 422
 
     stored_order = client.app.state.order_repository.get(UUID(order_id))
@@ -689,6 +706,7 @@ def test_supplier_can_confirm_order_after_catalog_price_changes(client):
 
     supplier_response = client.post(
         f"/orders/{order_id}/supplier-confirmation",
+        headers={"Authorization": (f"Bearer {client.app.state.test_supplier_token}")},
     )
 
     assert supplier_response.status_code == 200
@@ -697,6 +715,78 @@ def test_supplier_can_confirm_order_after_catalog_price_changes(client):
     assert confirmed_order["status"] == "order_confirmed"
     assert Decimal(confirmed_order["total_amount"]) == original_total
     assert Decimal(confirmed_order["items"][0]["unit_price"]) == original_price
+
+
+def test_buyer_confirmation_requires_authentication(client) -> None:
+    rfq_id, offer_data = _create_rfq_and_offer(client)
+    create_response = client.post(
+        f"/rfqs/{rfq_id}/orders",
+        json={"offer_id": offer_data["id"]},
+    )
+    assert create_response.status_code == 201
+
+    response = client.post(
+        f"/orders/{create_response.json()['id']}/buyer-confirmation",
+        headers={"Authorization": ""},
+    )
+
+    assert response.status_code == 401
+
+
+def test_supplier_cannot_use_buyer_confirmation(client) -> None:
+    rfq_id, offer_data = _create_rfq_and_offer(client)
+    create_response = client.post(
+        f"/rfqs/{rfq_id}/orders",
+        json={"offer_id": offer_data["id"]},
+    )
+    assert create_response.status_code == 201
+
+    response = client.post(
+        f"/orders/{create_response.json()['id']}/buyer-confirmation",
+        headers={
+            "Authorization": (
+                f"Bearer {client.app.state.test_supplier_token}"
+            )
+        },
+    )
+
+    assert response.status_code == 403
+
+
+def test_other_buyer_cannot_confirm_foreign_order(client) -> None:
+    rfq_id, offer_data = _create_rfq_and_offer(client)
+    create_response = client.post(
+        f"/rfqs/{rfq_id}/orders",
+        json={"offer_id": offer_data["id"]},
+    )
+    assert create_response.status_code == 201
+
+    response = client.post(
+        f"/orders/{create_response.json()['id']}/buyer-confirmation",
+        headers={
+            "Authorization": (
+                f"Bearer {client.app.state.test_other_buyer_token}"
+            )
+        },
+    )
+
+    assert response.status_code == 404
+
+
+def test_buyer_cannot_use_supplier_rejection(client) -> None:
+    rfq_id, offer_data = _create_rfq_and_offer(client)
+    create_response = client.post(
+        f"/rfqs/{rfq_id}/orders",
+        json={"offer_id": offer_data["id"]},
+    )
+    assert create_response.status_code == 201
+
+    response = client.post(
+        f"/orders/{create_response.json()['id']}/supplier-rejection",
+        json={"reason": "Тест авторизации"},
+    )
+
+    assert response.status_code == 403
 
 
 def test_buyer_can_reject_order(client):
@@ -731,14 +821,18 @@ def test_supplier_can_reject_after_buyer_confirmation(client):
     assert response.status_code == 201
     order_id = response.json()["id"]
 
-    response = client.post(f"/orders/{order_id}/buyer-confirmation")
+    response = client.post(f"/orders/{order_id}/buyer-confirmation", )
     assert response.status_code == 200
 
     response = client.post(
         f"/orders/{order_id}/supplier-rejection",
+        headers={
+            "Authorization": (
+                f"Bearer {client.app.state.test_supplier_token}"
+            )
+        },
         json={"reason": "Не можем выполнить заказ в срок"},
     )
-
     assert response.status_code == 200
     order = response.json()
     assert order["status"] == "rejected"
@@ -776,6 +870,11 @@ def test_supplier_cannot_reject_before_buyer_confirmation(client):
 
     response = client.post(
         f"/orders/{order_id}/supplier-rejection",
+        headers={
+            "Authorization": (
+                f"Bearer {client.app.state.test_supplier_token}"
+                )
+            },
         json={"reason": "Отказ поставщика"},
     )
 

@@ -133,6 +133,25 @@ def require_role(identity: Identity, allowed_role: str) -> None:
         )
 
 
+def require_order_party(
+    identity: Identity,
+    order: Order,
+    party: OrderParty,
+) -> None:
+    if party == OrderParty.BUYER:
+        require_role(identity, "buyer")
+        organization_id = order.buyer_organization_id
+    else:
+        require_role(identity, "supplier")
+        organization_id = order.supplier_organization_id
+
+    if identity.organization_id != organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Order not found",
+        )
+
+
 @app.get("/health", tags=["system"])
 def health_check() -> dict[str, str]:
     return {"status": "ok"}
@@ -320,6 +339,7 @@ def create_order(
 def confirm_order_by_buyer(
     order_id: UUID,
     repository: OrderRepository = Depends(get_order_repository),
+    identity: Identity = Depends(get_current_identity),
 ) -> Order:
     order = repository.get(order_id)
 
@@ -329,6 +349,7 @@ def confirm_order_by_buyer(
             detail="Order not found",
         )
 
+    require_order_party(identity, order, OrderParty.BUYER)
     try:
         updated_order = buyer_confirm_order(order)
     except OrderWorkflowError as exc:
@@ -352,6 +373,7 @@ def confirm_order_by_buyer(
 def confirm_order_by_supplier(
     order_id: UUID,
     repository: OrderRepository = Depends(get_order_repository),
+    identity: Identity = Depends(get_current_identity),
     adapters: dict[UUID, CatalogPolicyAdapter] = Depends(
         get_supplier_adapters
     ),
@@ -364,6 +386,7 @@ def confirm_order_by_supplier(
             detail="Order not found",
         )
 
+    require_order_party(identity, order, OrderParty.SUPPLIER)
     adapter = adapters.get(order.supplier_organization_id)
     if adapter is None:
         raise HTTPException(
@@ -388,6 +411,7 @@ def buyer_rejection(
     order_id: UUID,
     payload: RejectOrderRequest,
     repository: OrderRepository = Depends(get_order_repository),
+    identity: Identity = Depends(get_current_identity),
 ):
     order = repository.get(order_id)
     if order is None:
@@ -395,7 +419,7 @@ def buyer_rejection(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Order not found",
         )
-
+    require_order_party(identity, order, OrderParty.BUYER)
     try:
         updated_order = reject_order(
             order,
@@ -417,6 +441,7 @@ def supplier_rejection(
     order_id: UUID,
     payload: RejectOrderRequest,
     repository: OrderRepository = Depends(get_order_repository),
+    identity: Identity = Depends(get_current_identity),
 ):
     order = repository.get(order_id)
     if order is None:
@@ -424,7 +449,7 @@ def supplier_rejection(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Order not found",
         )
-
+    require_order_party(identity, order, OrderParty.SUPPLIER)
     try:
         updated_order = reject_order(
             order,
