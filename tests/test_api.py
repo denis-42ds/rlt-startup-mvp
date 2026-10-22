@@ -998,6 +998,42 @@ def test_read_rfq_requires_authentication(client):
     assert response.status_code == 401
 
 
+def test_supplier_cannot_read_rfq(client):
+    create_response = client.post(
+        "/rfqs",
+        json={
+            "buyer_organization_id": str(uuid4()),
+            "items": [
+                {
+                    "product_name": "Стальной лист",
+                    "quantity": "100",
+                    "unit": "кг",
+                }
+            ],
+        },
+    )
+    assert create_response.status_code == 201
+
+    rfq_id = create_response.json()["id"]
+
+    response = client.get(
+        f"/rfqs/{rfq_id}",
+        headers={
+            "Authorization": (
+                f"Bearer {client.app.state.test_supplier_token}"
+            )
+        },
+    )
+
+    assert response.status_code == 403
+
+
+def test_read_unknown_rfq_returns_404(client):
+    response = client.get(f"/rfqs/{uuid4()}")
+
+    assert response.status_code == 404
+
+
 def test_seller_workflow_requires_authentication(client) -> None:
     response = client.post(
         f"/rfqs/{uuid4()}/seller-offer-workflow",
