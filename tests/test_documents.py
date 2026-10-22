@@ -1,10 +1,8 @@
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from uuid import uuid4
-from fastapi.testclient import TestClient
 import pytest
 
-from rlt_startup.api import app
 from rlt_startup.models.order import (
     Order,
     OrderItem,
@@ -14,9 +12,6 @@ from rlt_startup.models.order import (
 from rlt_startup.services.document_generation import (
     DocumentGenerationError,
     generate_document_drafts,
-)
-from rlt_startup.repositories.order_repository import (
-    InMemoryOrderRepository,
 )
 
 def make_order(status: OrderStatus = OrderStatus.CONFIRMED) -> Order:
@@ -108,31 +103,29 @@ def test_document_generation_does_not_modify_order():
     assert order.model_dump() == original_data
 
 
-def test_api_generates_documents_for_confirmed_order():
-    original_repository = app.state.order_repository
-    repository = InMemoryOrderRepository()
-    order = make_order()
+def test_api_generates_documents_for_confirmed_order(client):
+    repository = client.app.state.order_repository
+    order = make_order().model_copy(
+        update={
+            "buyer_organization_id": client.app.state.test_buyer_org_id,
+            "supplier_organization_id": client.app.state.test_supplier_org_id,
+        }
+    )
     repository.add(order)
-    app.state.order_repository = repository
 
-    try:
-        with TestClient(app) as client:
-            response = client.get(f"/orders/{order.id}/documents")
+    response = client.get(f"/orders/{order.id}/documents")
 
-        assert response.status_code == 200
+    assert response.status_code == 200
 
-        data = response.json()
-        assert data["commercial_offer"]["document_type"] == "commercial_offer"
-        assert data["order"]["document_type"] == "order"
-        assert (
-            data["shipping_specification"]["document_type"]
-            == "shipping_specification"
-        )
-
-        assert data["commercial_offer"]["status"] == "draft"
-        assert data["order"]["total_amount"] == "14550.00"
-    finally:
-        app.state.order_repository = original_repository
+    data = response.json()
+    assert data["commercial_offer"]["document_type"] == "commercial_offer"
+    assert data["order"]["document_type"] == "order"
+    assert (
+        data["shipping_specification"]["document_type"]
+        == "shipping_specification"
+    )
+    assert data["commercial_offer"]["status"] == "draft"
+    assert data["order"]["total_amount"] == "14550.00"
 
 
 @pytest.mark.parametrize(
@@ -143,49 +136,95 @@ def test_api_generates_documents_for_confirmed_order():
         OrderStatus.REJECTED,
     ],
 )
-def test_api_rejects_documents_for_unconfirmed_order(order_status):
-    original_repository = app.state.order_repository
-    repository = InMemoryOrderRepository()
-    order = make_order(order_status)
-    repository.add(order)
-    app.state.order_repository = repository
+def test_api_rejects_documents_for_unconfirmed_order(client, order_status):
+    order = make_order(order_status).model_copy(
+        update={
+            "buyer_organization_id": client.app.state.test_buyer_org_id,
+            "supplier_organization_id": client.app.state.test_supplier_org_id,
+        }
+    )
+    client.app.state.order_repository.add(order)
 
-    try:
-        with TestClient(app) as client:
-            response = client.get(f"/orders/{order.id}/documents")
+    response = client.get(f"/orders/{order.id}/documents")
 
-        assert response.status_code == 422
-    finally:
-        app.state.order_repository = original_repository
+    assert response.status_code == 422
 
 
-def test_api_returns_404_for_unknown_order_documents():
-    original_repository = app.state.order_repository
-    app.state.order_repository = InMemoryOrderRepository()
+def test_api_returns_404_for_unknown_order_documents(client):
+    response = client.get(f"/orders/{uuid4()}/documents")
 
-    try:
-        with TestClient(app) as client:
-            response = client.get(f"/orders/{uuid4()}/documents")
-
-        assert response.status_code == 404
-    finally:
-        app.state.order_repository = original_repository
+    assert response.status_code == 404
 
 
-def test_api_document_generation_does_not_modify_order():
-    original_repository = app.state.order_repository
-    repository = InMemoryOrderRepository()
-    order = make_order()
+def test_api_document_generation_does_not_modify_order(client):
+    repository = client.app.state.order_repository
+    order = make_order().model_copy(
+        update={
+            "buyer_organization_id": client.app.state.test_buyer_org_id,
+            "supplier_organization_id": client.app.state.test_supplier_org_id,
+        }
+    )
     repository.add(order)
     original_data = repository.get(order.id).model_dump()
-    app.state.order_repository = repository
 
-    try:
-        with TestClient(app) as client:
-            response = client.get(f"/orders/{order.id}/documents")
+    response = client.get(f"/orders/{order.id}/documents")
 
-        assert response.status_code == 200
-        assert repository.get(order.id).model_dump() == original_data
-    finally:
-        app.state.order_repository = original_repository
+    assert response.status_code == 200
+    assert repository.get(order.id).model_dump() == original_data
 
+
+def test_documents_require_authentication(client):
+    order = make_order().model_copy(
+        update={
+            "buyer_organization_id": client.app.state.test_buyer_org_id,
+            "supplier_organization_id": client.app.state.test_supplier_org_id,
+        }
+    )
+    client.app.state.order_repository.add(order)
+
+    response = client.get(
+        f"/orders/{order.id}/documents",
+        headers={"Authorization": ""},
+    )
+
+    assert response.status_code == 401
+
+
+def test_other_buyer_cannot_access_order_documents(client):
+    order = make_order().model_copy(
+        update={
+            "buyer_organization_id": client.app.state.test_buyer_org_id,
+            "supplier_organization_id": client.app.state.test_supplier_org_id,
+        }
+    )
+    client.app.state.order_repository.add(order)
+
+    response = client.get(
+        f"/orders/{order.id}/documents",
+        headers={
+            "Authorization": (
+                f"Bearer {client.app.state.test_other_buyer_token}"
+            )
+        },
+    )
+
+    assert response.status_code == 404
+
+
+def test_supplier_can_access_own_confirmed_order_documents(client):
+    order = make_order().model_copy(
+        update={
+            "buyer_organization_id": client.app.state.test_buyer_org_id,
+            "supplier_organization_id": client.app.state.test_supplier_org_id,
+        }
+    )
+    client.app.state.order_repository.add(order)
+
+    response = client.get(
+        f"/orders/{order.id}/documents",
+        headers={
+            "Authorization": f"Bearer {client.app.state.test_supplier_token}"
+        },
+    )
+
+    assert response.status_code == 200

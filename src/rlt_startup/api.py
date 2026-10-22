@@ -245,10 +245,11 @@ def execute_seller_offer_workflow(
     payload: SellerOfferWorkflowRequest,
     repository: RFQRepository = Depends(get_rfq_repository),
     offer_repository: OfferRepository = Depends(get_offer_repository),
-    adapters: dict[UUID, CatalogPolicyAdapter] = Depends(
-        get_supplier_adapters
-    ),
+    adapters: dict[UUID, CatalogPolicyAdapter] = Depends(get_supplier_adapters),
+    identity: Identity = Depends(get_current_identity),
 ) -> SellerOfferWorkflowResult:
+
+    require_role(identity, "orchestrator")
     rfq = repository.get(rfq_id)
 
     if rfq is None:
@@ -470,6 +471,7 @@ def supplier_rejection(
 def get_order_documents(
     order_id: UUID,
     repository: OrderRepository = Depends(get_order_repository),
+    identity: Identity = Depends(get_current_identity),
 ):
     order = repository.get(order_id)
 
@@ -477,6 +479,25 @@ def get_order_documents(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Order not found",
+        )
+
+    # Заказ доступен только его покупателю или поставщику.
+    if identity.role == "buyer":
+        if identity.organization_id != order.buyer_organization_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Order not found",
+            )
+    elif identity.role == "supplier":
+        if identity.organization_id != order.supplier_organization_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Order not found",
+            )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Role is not allowed to access order documents",
         )
 
     try:
