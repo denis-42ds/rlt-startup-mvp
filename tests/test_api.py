@@ -311,6 +311,11 @@ def test_create_order_from_saved_offer(client) -> None:
     assert stored_order.id == order_id
     assert stored_order.offer_id == UUID(offer_id)
 
+    events = client.app.state.audit_log.list_events(order_id=order_id)
+
+    assert [event.event_type for event in events] == ["order_created"]
+    assert events[0].outcome == "success"
+
 
 def test_create_order_requires_authentication(client) -> None:
     rfq_id, offer_data = _create_rfq_and_offer(client)
@@ -486,6 +491,15 @@ def test_buyer_cannot_confirm_order_twice(client) -> None:
     )
     assert second_response.status_code == 422
 
+    events = client.app.state.audit_log.list_events(
+        order_id=UUID(order_id)
+    )
+
+    assert [event.event_type for event in events] == [
+        "order_created",
+        "buyer_confirmed",
+    ]
+
 
 def test_supplier_can_confirm_after_buyer(client) -> None:
     rfq_id, offer_data = _create_rfq_and_offer(client)
@@ -520,6 +534,17 @@ def test_supplier_can_confirm_after_buyer(client) -> None:
     stored_order = client.app.state.order_repository.get(UUID(order_id))
     assert stored_order is not None
     assert stored_order.status.value == "order_confirmed"
+
+    events = client.app.state.audit_log.list_events(
+        order_id=UUID(order_id)
+    )
+
+    assert [event.event_type for event in events] == [
+        "order_created",
+        "buyer_confirmed",
+        "supplier_confirmed",
+    ]
+    assert all(event.outcome == "success" for event in events)
 
 
 def test_supplier_confirmation_rejected_when_stock_becomes_insufficient(client):
@@ -564,6 +589,21 @@ def test_supplier_confirmation_rejected_when_stock_becomes_insufficient(client):
     assert stored_order is not None
     assert stored_order.status.value == "pending_supplier_confirmation"
     assert stored_order.supplier_confirmed_at is None
+
+    events = client.app.state.audit_log.list_events(
+        order_id=UUID(order_id)
+    )
+
+    assert [event.event_type for event in events] == [
+        "order_created",
+        "buyer_confirmed",
+        "policy_check_blocked",
+    ]
+    assert events[-1].outcome == "blocked"
+    assert events[-1].reason_code == "supplier_execution_check_failed"
+    assert "supplier_confirmed" not in [
+        event.event_type for event in events
+    ]
 
 
 def test_supplier_confirmation_rejected_when_inventory_is_stale(client):
