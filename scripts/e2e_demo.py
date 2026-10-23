@@ -1,3 +1,4 @@
+import os
 import json
 import sys
 import argparse
@@ -12,10 +13,23 @@ SUPPLIER_B_ID = "10000000-0000-4000-8000-000000000002"
 SUPPLIER_C_ID = "10000000-0000-4000-8000-000000000003"
 
 
+def get_demo_token(name: str) -> str:
+    token = os.environ.get(name)
+    if not token:
+        raise RuntimeError(
+            f"Не задана переменная {name}. "
+            "Загрузи локальную конфигурацию командой: source .env.demo"
+        )
+    return token
+
+
+def auth_headers(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
-
 
 
 def show(label: str, response: httpx.Response) -> dict:
@@ -28,7 +42,6 @@ def show(label: str, response: httpx.Response) -> dict:
 
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return payload
-
 
 
 def prompt_field(label: str, value, optional: bool = False):
@@ -174,7 +187,15 @@ def create_interactive_rfq(client: httpx.Client) -> dict:
 
 
 def main(interactive: bool = False) -> None:
-    with httpx.Client(base_url=BASE_URL, timeout=15.0) as client:
+    buyer_token = get_demo_token("RLT_DEMO_BUYER_TOKEN")
+    supplier_token = get_demo_token("RLT_DEMO_SUPPLIER_TOKEN")
+    orchestrator_token = get_demo_token("RLT_DEMO_ORCHESTRATOR_TOKEN")
+
+    with httpx.Client(
+        base_url=BASE_URL,
+        timeout=15.0,
+        headers=auth_headers(buyer_token),
+        ) as client:
         health = client.get("/health")
         show("health", health)
 
@@ -222,6 +243,7 @@ def main(interactive: bool = False) -> None:
                         SUPPLIER_C_ID,
                     ]
                 },
+                headers=auth_headers(orchestrator_token),
             ),
         )
 
@@ -336,8 +358,10 @@ def main(interactive: bool = False) -> None:
         # и складские остатки через демо-адаптер.
         supplier_result = show(
             "supplier confirmation",
-            client.post(f"/orders/{order_id}/supplier-confirmation"),
-        )
+            client.post(f"/orders/{order_id}/supplier-confirmation",
+            headers=auth_headers(supplier_token),
+                        ),
+            )
         require(
             supplier_result["status"] == "order_confirmed",
             "Заказ должен стать order_confirmed",
