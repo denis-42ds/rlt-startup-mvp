@@ -33,6 +33,7 @@ from rlt_startup.services.document_generation import (
 from rlt_startup.services.offer_validation import OfferValidationError
 from rlt_startup.services.order_workflow import (
     OrderWorkflowError,
+    OrderPolicyViolation,
     buyer_confirm_order,
     create_order_from_offer,
     reject_order,
@@ -49,6 +50,11 @@ from rlt_startup.services.authentication import (
     authenticate_token,
     load_demo_credentials,
 )
+from rlt_startup.services.audit_log import (
+    AuditEvent,
+    InMemoryAuditLog,
+    make_audit_event,
+)
 
 app = FastAPI(
     title="RLT.Startup API",
@@ -60,6 +66,7 @@ app.state.rfq_repository = InMemoryRFQRepository()
 app.state.offer_repository = InMemoryOfferRepository()
 app.state.order_repository = InMemoryOrderRepository()
 app.state.supplier_adapters = {}
+app.state.audit_log = InMemoryAuditLog()
 
 try:
     app.state.demo_credentials = load_demo_credentials(
@@ -118,6 +125,10 @@ def get_supplier_adapters(
     return request.app.state.supplier_adapters
 
 
+def get_audit_log(request: Request) -> InMemoryAuditLog:
+    return request.app.state.audit_log
+
+
 def get_current_identity(request: Request) -> Identity:
     return authenticate_token(
         request.headers.get("Authorization"),
@@ -150,6 +161,24 @@ def require_order_party(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Order not found",
         )
+
+
+def record_order_event(
+    audit_log: InMemoryAuditLog,
+    *,
+    event_type: str,
+    order_id: UUID,
+    outcome: str = "success",
+    reason_code: str | None = None,
+) -> None:
+    audit_log.append(
+        make_audit_event(
+            event_type=event_type,
+            order_id=order_id,
+            outcome=outcome,
+            reason_code=reason_code,
+        )
+    )
 
 
 @app.get("/health", tags=["system"])
@@ -298,6 +327,7 @@ def create_order(
     rfq_repository: RFQRepository = Depends(get_rfq_repository),
     offer_repository: OfferRepository = Depends(get_offer_repository),
     order_repository: OrderRepository = Depends(get_order_repository),
+    audit_log: InMemoryAuditLog = Depends(get_audit_log),
 ) -> Order:
     require_role(identity, "buyer")
 
@@ -331,6 +361,12 @@ def create_order(
             detail="Order with this ID already exists",
         ) from exc
 
+    record_order_event(
+            audit_log,
+            event_type="order_created",
+            order_id=order.id,
+            )
+
     return order
 
 
@@ -343,6 +379,7 @@ def confirm_order_by_buyer(
     order_id: UUID,
     repository: OrderRepository = Depends(get_order_repository),
     identity: Identity = Depends(get_current_identity),
+    audit_log: InMemoryAuditLog = Depends(get_audit_log),
 ) -> Order:
     order = repository.get(order_id)
 
@@ -364,6 +401,11 @@ def confirm_order_by_buyer(
     # Сохраняем переход состояния в репозитории.
     # Для in-memory реализации заменяем сохранённую запись.
     repository.update(updated_order)
+    record_order_event(
+            audit_log,
+            event_type="buyer_confirmed",
+            order_id=updated_order.id,
+            )
 
     return updated_order
 
@@ -377,6 +419,7 @@ def confirm_order_by_supplier(
     order_id: UUID,
     repository: OrderRepository = Depends(get_order_repository),
     identity: Identity = Depends(get_current_identity),
+    audit_log: InMemoryAuditLog = Depends(get_audit_log),
     adapters: dict[UUID, CatalogPolicyAdapter] = Depends(
         get_supplier_adapters
     ),
@@ -399,6 +442,18 @@ def confirm_order_by_supplier(
 
     try:
         updated_order = supplier_confirm_order(order, adapter)
+    except OrderPolicyViolation as exc:
+        record_order_event(
+            audit_log,
+            event_type="policy_check_blocked",
+            order_id=order.id,
+            outcome="blocked",
+            reason_code="supplier_execution_check_failed",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
     except OrderWorkflowError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -406,6 +461,11 @@ def confirm_order_by_supplier(
         ) from exc
 
     repository.update(updated_order)
+    record_order_event(
+            audit_log,
+            event_type="supplier_confirmed",
+            order_id=updated_order.id,
+            )
 
     return updated_order
 
@@ -415,6 +475,7 @@ def buyer_rejection(
     payload: RejectOrderRequest,
     repository: OrderRepository = Depends(get_order_repository),
     identity: Identity = Depends(get_current_identity),
+    audit_log: InMemoryAuditLog = Depends(get_audit_log),
 ):
     order = repository.get(order_id)
     if order is None:
@@ -436,6 +497,12 @@ def buyer_rejection(
         ) from exc
 
     repository.update(updated_order)
+    record_order_event(
+            audit_log,
+            event_type="order_rejected",
+            order_id=updated_order.id,
+            reason_code="buyer_rejection",
+            )
     return updated_order
 
 
@@ -445,6 +512,7 @@ def supplier_rejection(
     payload: RejectOrderRequest,
     repository: OrderRepository = Depends(get_order_repository),
     identity: Identity = Depends(get_current_identity),
+    audit_log: InMemoryAuditLog = Depends(get_audit_log),
 ):
     order = repository.get(order_id)
     if order is None:
@@ -466,6 +534,12 @@ def supplier_rejection(
         ) from exc
 
     repository.update(updated_order)
+    record_order_event(
+            audit_log,
+            event_type="order_rejected",
+            order_id=updated_order.id,
+            reason_code="supplier_rejection",
+            )
     return updated_order
 
 

@@ -7,6 +7,7 @@ from rlt_startup.api import app
 from rlt_startup.repositories.rfq_repository import InMemoryRFQRepository
 from rlt_startup.repositories.offer_repository import InMemoryOfferRepository
 from rlt_startup.repositories.order_repository import InMemoryOrderRepository
+from rlt_startup.services.audit_log import InMemoryAuditLog
 
 
 @pytest.fixture
@@ -16,6 +17,7 @@ def client():
     original_order_repository = app.state.order_repository
     original_adapters = app.state.supplier_adapters
     original_credentials = app.state.demo_credentials
+    original_audit_log = app.state.audit_log
 
     buyer_org_id = uuid4()
     supplier_org_id = uuid4()
@@ -71,6 +73,7 @@ def client():
     app.state.offer_repository = InMemoryOfferRepository()
     app.state.order_repository = InMemoryOrderRepository()
     app.state.supplier_adapters = {}
+    app.state.audit_log = InMemoryAuditLog()
 
     try:
         with TestClient(app, headers={"Authorization": "Bearer test-buyer-token"},) as test_client:
@@ -81,6 +84,7 @@ def client():
         app.state.order_repository = original_order_repository
         app.state.supplier_adapters = original_adapters
         app.state.demo_credentials = original_credentials
+        app.state.audit_log = original_audit_log
 
         for name in (
             "test_buyer_org_id",
