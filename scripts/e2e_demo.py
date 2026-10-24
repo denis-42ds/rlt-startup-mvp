@@ -3,7 +3,7 @@ import json
 import sys
 import argparse
 from uuid import UUID
-import httpx
+import httpx2 as httpx
 
 BASE_URL = "http://127.0.0.1:8000"
 
