@@ -24,3 +24,6 @@ org/
 .idea/
 .vscode/
 .DS_Store
+
+# DATA
+.run/
