@@ -7,6 +7,7 @@ LOG_FILE := .run/api.log
 
 .PHONY: up down health logs logs-follow test e2e interactive
 
+# Запуск API в фоне
 up:
 	@set -eu
 	test -x "$(PYTHON)" || { echo "Не найдено .venv"; exit 1; }
@@ -23,13 +24,13 @@ up:
 	fi
 
 	nohup bash -c \
-		'source .env.demo; exec .venv/bin/python -m uvicorn rlt_startup.demo_api:app --host 127.0.0.1 --port 8000' \
+		'source .venv/bin/activate; set -a; source .env.demo; set +a; exec uvicorn rlt_startup.demo_api:app --host 127.0.0.1 --port 8000' \
 		> "$(LOG_FILE)" 2>&1 &
 	echo $$! > "$(PID_FILE)"
 
 	echo "Ожидание запуска API..."
 	for i in {1..15}; do
-		if curl -fsS --max-time 1 http://127.0.0.1:8000/health >/dev/null; then
+		if curl -fsS --silent --max-time 1 http://127.0.0.1:8000/health >/dev/null 2>&1; then
 			echo "API готов: http://127.0.0.1:8000"
 			echo "Лог: $(LOG_FILE)"
 			exit 0
@@ -46,25 +47,45 @@ up:
 	rm -f "$(PID_FILE)"
 	exit 1
 
+# Проверка доступности API
 health:
 	@curl -fsS --max-time 3 http://127.0.0.1:8000/health || { echo "API недоступен"; exit 1; }
-	@echo
+	echo
 
+# Последние строки лога
 logs:
 	@tail -n 30 "$(LOG_FILE)"
 
+# Непрерывный просмотр лога
 logs-follow:
 	@tail -n 30 -f "$(LOG_FILE)"
 
+# Тесты и линтер
 test:
-	@source .env.demo && "$(PYTHON)" -m pytest -q
+	@set -e
+	source .venv/bin/activate
+	"$(PYTHON)" -m pytest -q
+	"$(PYTHON)" -m ruff check
 
+# Полная сквозная демонстрация
 e2e:
-	@source .env.demo && "$(PYTHON)" scripts/e2e_demo.py
+	@set -e
+	source .venv/bin/activate
+	set -a
+	source .env.demo
+	set +a
+	"$(PYTHON)" scripts/e2e_demo.py
 
+# Интерактивная демонстрация
 interactive:
-	@source .env.demo && "$(PYTHON)" scripts/e2e_demo.py --interactive
+	@set -e
+	source .venv/bin/activate
+	set -a
+	source .env.demo
+	set +a
+	"$(PYTHON)" scripts/e2e_demo.py --interactive
 
+# Остановка API
 down:
 	@set -eu
 	if [[ ! -f "$(PID_FILE)" ]]; then
