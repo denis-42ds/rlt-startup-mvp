@@ -2,6 +2,14 @@
 
 **RLT.Startup** — прототип B2B-маркетплейса, в котором ИИ-агенты координируют взаимодействие покупателей и поставщиков: обрабатывают запросы на коммерческое предложение (RFQ), собирают и сравнивают предложения, помогают согласовывать условия заказа и готовят черновики документов.
 
+![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-API-009688?logo=fastapi&logoColor=white)
+![Pydantic](https://img.shields.io/badge/Pydantic-validation-E92063?logo=pydantic&logoColor=white)
+![Ollama](https://img.shields.io/badge/Ollama-local%20LLM-black?logo=ollama&logoColor=white)
+![pytest](https://img.shields.io/badge/pytest-tests-0A9EDC?logo=pytest&logoColor=white)
+![Ruff](https://img.shields.io/badge/Ruff-linting-D7FF64?logo=ruff&logoColor=black)
+![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-CI-2088FF?logo=githubactions&logoColor=white)
+
 ## Проблема и ценность
 
 Покупателю нужно отправить запрос нескольким поставщикам, получить сопоставимые условия и выбрать подходящее предложение. Поставщику необходимо быстро обработать запрос, проверить каталог и остатки, рассчитать предложение и согласовать исключения.
