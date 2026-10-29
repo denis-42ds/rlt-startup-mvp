@@ -1,11 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-
-from rlt_startup.services.catalog_policy import CatalogPolicyAdapter
-from rlt_startup.services.supplier_execution_check import (
-    check_order_executability,
-    )
 from rlt_startup.models.offer import Offer
 from rlt_startup.models.order import (
     Order,
@@ -14,7 +9,11 @@ from rlt_startup.models.order import (
     OrderStatus,
 )
 from rlt_startup.models.rfq import RFQ
+from rlt_startup.services.catalog_policy import CatalogPolicyAdapter
 from rlt_startup.services.offer_validation import validate_offer_against_rfq
+from rlt_startup.services.supplier_execution_check import (
+    check_order_executability,
+)
 
 
 class OrderWorkflowError(ValueError):
@@ -196,7 +195,9 @@ def reject_order(
         and order.status == OrderStatus.PENDING_SUPPLIER_CONFIRMATION
     )
     if not allowed:
-        raise OrderWorkflowError("Эта сторона не может отклонить заказ в текущем статусе")
+        raise OrderWorkflowError(
+                "Эта сторона не может отклонить заказ в текущем статусе"
+                )
 
     return _replace_order(
         order,

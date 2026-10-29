@@ -1,6 +1,7 @@
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import uuid4
+
 import pytest
 
 from rlt_startup.models.order import (
@@ -13,6 +14,7 @@ from rlt_startup.services.document_generation import (
     DocumentGenerationError,
     generate_document_drafts,
 )
+
 
 def make_order(status: OrderStatus = OrderStatus.CONFIRMED) -> Order:
     now = datetime.now(timezone.utc)

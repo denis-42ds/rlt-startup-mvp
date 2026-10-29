@@ -1,12 +1,13 @@
 import json
-import pytest
 from uuid import uuid4
+
+import pytest
 from fastapi.testclient import TestClient
 
 from rlt_startup.api import app
-from rlt_startup.repositories.rfq_repository import InMemoryRFQRepository
 from rlt_startup.repositories.offer_repository import InMemoryOfferRepository
 from rlt_startup.repositories.order_repository import InMemoryOrderRepository
+from rlt_startup.repositories.rfq_repository import InMemoryRFQRepository
 from rlt_startup.services.audit_log import InMemoryAuditLog
 
 
@@ -76,7 +77,10 @@ def client():
     app.state.audit_log = InMemoryAuditLog()
 
     try:
-        with TestClient(app, headers={"Authorization": "Bearer test-buyer-token"},) as test_client:
+        with TestClient(
+                app,
+                headers={"Authorization": "Bearer test-buyer-token"},
+                ) as test_client:
             yield test_client
     finally:
         app.state.rfq_repository = original_rfq_repository

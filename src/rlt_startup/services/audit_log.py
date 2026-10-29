@@ -3,7 +3,6 @@ from datetime import datetime, timezone
 from typing import Literal
 from uuid import UUID
 
-
 AuditOutcome = Literal["success", "blocked"]
 
 

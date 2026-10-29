@@ -7,7 +7,6 @@ import pytest
 from rlt_startup.models.offer import Offer, OfferItem
 from rlt_startup.models.order import Order
 from rlt_startup.models.rfq import RFQ, RFQItem
-from rlt_startup.services.order_workflow import create_order_from_offer
 from rlt_startup.repositories.offer_repository import (
     InMemoryOfferRepository,
     OfferAlreadyExistsError,
@@ -16,7 +15,7 @@ from rlt_startup.repositories.order_repository import (
     InMemoryOrderRepository,
     OrderAlreadyExistsError,
 )
-
+from rlt_startup.services.order_workflow import create_order_from_offer
 
 NOW = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
 
