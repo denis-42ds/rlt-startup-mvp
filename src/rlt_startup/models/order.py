@@ -90,7 +90,10 @@ class Order(BaseModel):
                 raise ValueError("Pending order cannot have rejection details")
 
         elif self.status == OrderStatus.PENDING_SUPPLIER_CONFIRMATION:
-            if self.buyer_confirmed_at is None or self.supplier_confirmed_at is not None:
+            if (
+                    self.buyer_confirmed_at is None
+                    or self.supplier_confirmed_at is not None
+                    ):
                 raise ValueError("Buyer must confirm before supplier confirmation")
             if self.rejected_by or self.rejection_reason:
                 raise ValueError("Pending order cannot have rejection details")
@@ -106,9 +109,15 @@ class Order(BaseModel):
                 raise ValueError("Rejected order requires party and reason")
             if self.supplier_confirmed_at is not None:
                 raise ValueError("Rejected order cannot have supplier confirmation")
-            if self.rejected_by == OrderParty.BUYER and self.buyer_confirmed_at is not None:
+            if (
+                    self.rejected_by == OrderParty.BUYER
+                    and self.buyer_confirmed_at is not None
+                    ):
                 raise ValueError("Buyer rejection must precede buyer confirmation")
-            if self.rejected_by == OrderParty.SUPPLIER and self.buyer_confirmed_at is None:
+            if (
+                    self.rejected_by == OrderParty.SUPPLIER
+                    and self.buyer_confirmed_at is None
+                    ):
                 raise ValueError("Supplier can reject only after buyer confirmation")
 
         return self

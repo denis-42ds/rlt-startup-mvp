@@ -4,36 +4,41 @@ from uuid import UUID
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
+from rlt_startup.models.order import Order, OrderParty
 from rlt_startup.models.rfq import RFQ
-from rlt_startup.repositories.rfq_repository import (
-    InMemoryRFQRepository,
-    RFQAlreadyExistsError,
-    RFQRepository,
-)
-from rlt_startup.services.catalog_policy import CatalogPolicyAdapter
-from rlt_startup.services.seller_offer_workflow import (
-    SellerOfferWorkflowResult,
-    run_seller_offer_workflow,
-)
 from rlt_startup.repositories.offer_repository import (
     InMemoryOfferRepository,
     OfferAlreadyExistsError,
     OfferRepository,
 )
-from rlt_startup.models.order import Order, OrderParty
 from rlt_startup.repositories.order_repository import (
     InMemoryOrderRepository,
     OrderAlreadyExistsError,
     OrderRepository,
 )
+from rlt_startup.repositories.rfq_repository import (
+    InMemoryRFQRepository,
+    RFQAlreadyExistsError,
+    RFQRepository,
+)
+from rlt_startup.services.audit_log import (
+    InMemoryAuditLog,
+    make_audit_event,
+)
+from rlt_startup.services.authentication import (
+    Identity,
+    authenticate_token,
+    load_demo_credentials,
+)
+from rlt_startup.services.catalog_policy import CatalogPolicyAdapter
 from rlt_startup.services.document_generation import (
     DocumentGenerationError,
     generate_document_drafts,
 )
 from rlt_startup.services.offer_validation import OfferValidationError
 from rlt_startup.services.order_workflow import (
-    OrderWorkflowError,
     OrderPolicyViolation,
+    OrderWorkflowError,
     buyer_confirm_order,
     create_order_from_offer,
     reject_order,
@@ -45,15 +50,9 @@ from rlt_startup.services.rfq_extraction import (
     RFQModelUnavailableError,
     extract_rfq,
 )
-from rlt_startup.services.authentication import (
-    Identity,
-    authenticate_token,
-    load_demo_credentials,
-)
-from rlt_startup.services.audit_log import (
-    AuditEvent,
-    InMemoryAuditLog,
-    make_audit_event,
+from rlt_startup.services.seller_offer_workflow import (
+    SellerOfferWorkflowResult,
+    run_seller_offer_workflow,
 )
 
 app = FastAPI(

@@ -63,7 +63,11 @@ def test_seller_workflow_prepares_and_compares_offers(client) -> None:
     response = client.post(
         f"/rfqs/{rfq_id}/seller-offer-workflow",
         json={"supplier_ids": [str(supplier_id)]},
-        headers={"Authorization": (f"Bearer {client.app.state.test_orchestrator_token}")},
+        headers={
+            "Authorization": (
+                f"Bearer {client.app.state.test_orchestrator_token}"
+                )
+            },
     )
 
     assert response.status_code == 200
@@ -89,7 +93,11 @@ def test_seller_workflow_returns_404_for_unknown_rfq(client) -> None:
     response = client.post(
         f"/rfqs/{uuid4()}/seller-offer-workflow",
         json={"supplier_ids": [str(uuid4())]},
-        headers={"Authorization": (f"Bearer {client.app.state.test_orchestrator_token}")},
+        headers={
+            "Authorization": (
+                f"Bearer {client.app.state.test_orchestrator_token}"
+                )
+            },
     )
 
     assert response.status_code == 404
@@ -117,7 +125,11 @@ def test_seller_workflow_reports_missing_supplier_adapter(client) -> None:
     response = client.post(
         f"/rfqs/{create_response.json()['id']}/seller-offer-workflow",
         json={"supplier_ids": [str(supplier_id)]},
-        headers={"Authorization": (f"Bearer {client.app.state.test_orchestrator_token}")},
+        headers={
+            "Authorization": (
+                f"Bearer {client.app.state.test_orchestrator_token}"
+                )
+            },
     )
 
     assert response.status_code == 200
@@ -151,7 +163,11 @@ def test_seller_workflow_rejects_duplicate_supplier_ids(client) -> None:
     response = client.post(
         f"/rfqs/{create_response.json()['id']}/seller-offer-workflow",
         json={"supplier_ids": [str(supplier_id), str(supplier_id)]},
-        headers={"Authorization": (f"Bearer {client.app.state.test_orchestrator_token}")},
+        headers={
+            "Authorization": (
+                f"Bearer {client.app.state.test_orchestrator_token}"
+                )
+            },
     )
 
     assert response.status_code == 422

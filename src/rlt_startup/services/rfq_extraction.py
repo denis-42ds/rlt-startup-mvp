@@ -15,7 +15,6 @@ from pydantic import (
     computed_field,
 )
 
-
 DEFAULT_MODEL = "qwen2.5:3b"
 DEFAULT_URL = "http://127.0.0.1:11434/api/generate"
 DEFAULT_TIMEOUT = 45

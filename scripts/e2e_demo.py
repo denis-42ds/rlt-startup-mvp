@@ -1,8 +1,8 @@
-import os
-import json
-import sys
 import argparse
-from uuid import UUID
+import json
+import os
+import sys
+
 import httpx2 as httpx
 
 BASE_URL = "http://127.0.0.1:8000"

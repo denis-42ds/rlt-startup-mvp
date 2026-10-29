@@ -13,7 +13,6 @@ from rlt_startup.models.supplier_data import (
 from rlt_startup.services.catalog_policy import InMemoryCatalogPolicyAdapter
 from rlt_startup.services.seller_offer_preparation import prepare_seller_offer
 
-
 NOW = datetime(2026, 10, 11, 12, 0, tzinfo=timezone.utc)
 
 

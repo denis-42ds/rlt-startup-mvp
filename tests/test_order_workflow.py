@@ -22,7 +22,6 @@ from rlt_startup.services.order_workflow import (
     supplier_confirm_order,
 )
 
-
 NOW = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
 
 
