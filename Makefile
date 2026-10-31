@@ -1,11 +1,39 @@
 SHELL := /bin/bash
+.DEFAULT_GOAL := help
 .ONESHELL:
 
 PYTHON := .venv/bin/python
 PID_FILE := .run/api.pid
 LOG_FILE := .run/api.log
 
-.PHONY: up down health logs logs-follow test e2e interactive
+.PHONY: help up tdown health logs logs-follow test e2e interactive
+
+# Справка по командам
+help:
+	@echo "RLT.Startup MVP — команды управления"
+	@echo
+	@echo "Запуск и остановка:"
+	@echo "  make up           Запустить API в фоне"
+	@echo "  make down         Остановить API"
+	@echo "  make health       Проверить доступность API"
+	@echo
+	@echo "Логи:"
+	@echo "  make logs         Показать последние 30 строк лога"
+	@echo "  make logs-follow  Следить за логом в реальном времени"
+	@echo
+	@echo "Проверки:"
+	@echo "  make test         Запустить pytest и Ruff"
+	@echo
+	@echo "Демонстрация:"
+	@echo "  make e2e          Запустить автоматический E2E-сценарий"
+	@echo "  make interactive  Запустить интерактивную демонстрацию"
+	@echo
+	@echo "Требования:"
+	@echo "  - виртуальное окружение .venv"
+	@echo "  - файл .env.demo для запуска и демонстрации"
+	@echo "  - локальная Ollama с настроенной моделью для интерактивного сценария"
+	@echo
+	@echo "Для E2E и интерактивной демонстрации API должен быть запущен (make up)."
 
 # Запуск API в фоне
 up:
